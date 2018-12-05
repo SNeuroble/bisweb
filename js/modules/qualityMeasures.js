@@ -188,9 +188,15 @@ class QualityMeasuresModule extends BaseModule {
   getQualityMeasures(maskedImage,segmentedImage,segmentedMaskedImage) {
     let indims=maskedImage.getDimensions();
     //let spa=maskedImage.getSpacing();
+<<<<<<< HEAD
     let idata=this.maskedImage.getImageData();
     let sdata=this.segmentedMaskedImage.getImageData(); // masked image 
     let bdata=this.segmentedImage.getImageData(); // background and non-background image
+=======
+    let idata=maskedImage.getImageData();
+    let sdata=segmentedMaskedImage.getImageData(); // masked image 
+    let bdata=segmentedImage.getImageData(); // background and non-background image
+>>>>>>> cd41f9c1725ff716f7a40a56607366f47f7ebcde
     let islicesize=indims[0]*indims[1];
     
     this.outputs['segm']=segmentedMaskedImage;
@@ -243,7 +249,11 @@ class QualityMeasuresModule extends BaseModule {
     let snr = this.mean(signal)/(Math.sqrt(this.variance(bm))); // higher better
     let cjv = (Math.sqrt(this.variance(wm))+Math.sqrt(this.variance(gm)))/Math.abs(this.mean(wm)-this.mean(gm)); // lower better
     let cnr = Math.abs(this.mean(gm)-this.mean(wm))/Math.sqrt(this.variance(bm)+this.variance(wm)+this.variance(gm)); // higher better
+<<<<<<< HEAD
     let efc = -x_j.map(function(v){ return v/x_max*Math.log(v/x_max);}).reduce((a,b)=>a+b); // lower better
+=======
+      let efc = -x_j.map(function(v){ return v/x_max*Math.log(v/x_max);}).reduce((a,b)=>a+b); // lower better
+>>>>>>> cd41f9c1725ff716f7a40a56607366f47f7ebcde
 
     console.log('xj.length:',x_j.length);
     console.log('x_max:',x_max);

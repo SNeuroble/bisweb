@@ -38,7 +38,7 @@
     <!-- external css files -->
     <!-- build:css -->
     <link rel="stylesheet" type="text/css" href="../lib/css/bootstrap_dark.css">
-    <link rel="stylesheet" type="text/css"  href="../lib/css/bootstrap-colorselector.css">
+    <link rel="stylesheet" href="../node_modules/jstree/dist/themes/default/style.css">
     <link rel="stylesheet" type="text/css" href="biscommon.css">
     <!-- endbuild -->
 
@@ -47,6 +47,7 @@
     <script src="bis.js"></script>
     <script src="../build/web/webcomponents-lite.js"></script>
     <script src="../build/web/jquery.min.js"></script>
+    <script src="../build/web/three.min.js"></script>
     <script src="../build/web/bootstrap.min.js"></script>
     <script src="../build/web/libbiswasm_wasm.js"></script>
     <script src="../build/web/bislib.js"></script>
@@ -62,7 +63,7 @@
 
   <bisweb-topmenubar   id="viewer_menubar"></bisweb-topmenubar> 
 
-  <div id="viewerwidget">
+  <div class="bisviewerwidget">
     
     <bisweb-viewerlayoutelement
        id="viewer_layout"
@@ -119,12 +120,28 @@
       bis-algorithmcontrollerid="#algoelement">
     </bisweb-modulemanager>
     
+    <bisweb-filetreepanel
+      id="bis_filetreepanel"
+      bis-layoutwidgetid="#viewer_layout" 
+      bis-viewerid="#viewer"
+      bis-viewerid2="#viewer2"
+      bis-viewerapplicationid="#viewer_application">
+    </bisweb-filetreepanel>
+
+    <bisweb-dicomimportelement
+      id="dicom_import"
+      bis-viewerid="#viewer"
+      bis-layoutwidgetid="#viewer_layout"
+      bis-filetreepanelid="#bis_filetreepanel">
+    </bisweb-dicomimportelement>
 
     <bisweb-viewerapplication
-       bis-menubarid="#viewer_menubar"
-       bis-modulemanagerid="#modulemanager"
-       bis-viewerid="#viewer"
-       bis-viewerid2="#viewer2">
+      id="viewer_application"
+      bis-menubarid="#viewer_menubar"
+      bis-modulemanagerid="#modulemanager"
+      bis-dicomimportid="#dicom_import"
+      bis-viewerid="#viewer"
+      bis-viewerid2="#viewer2">
     </bisweb-viewerapplication>
     
   </div>

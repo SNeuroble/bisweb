@@ -15,7 +15,6 @@
  
  ENDLICENSE */
 
-/* global process,*/
 "use strict";
 
 /** 
@@ -26,10 +25,13 @@
 
 const biscoreio=require('./bis_coregenericio');
 const util=require('./bis_util');
+
 const glob=biscoreio.getglobmodule();
 const fs=biscoreio.getfsmodule();
 const path=biscoreio.getpathmodule();
 const rimraf=biscoreio.getrimrafmodule();
+
+
 // -------------------------------------------------------------------------------------------------------
 // File server stuff
 
@@ -233,45 +235,6 @@ let write = function (url, data,isbinary=false) {
     });
 };
 
-/** Copies a single file
- * @param{String} source -- the input filename
- * @param{String} target -- the output filename
- * @returns {Promise} without payload
- */
-
-let copyFile=function(source,target) {
-
-    if (fileServerClient) {
-        try {
-            return fileServerClient.copyFile(source.target);
-        } catch (e) {
-            return Promise.reject('No copy file functionality');
-        }
-    }
-
-    if (inBrowser) {
-        return Promise.rejected('copyFile can not be  done in a  Browser');
-    }
-
-    // https://stackoverflow.com/questions/11293857/fastest-way-to-copy-file-in-node-js
-    let rd = fs.createReadStream(source);
-    let wr = fs.createWriteStream(target);
-    return new Promise(function(resolve, reject) {
-        rd.on('error', reject);
-        wr.on('error', reject);
-        wr.on('finish', resolve);
-        try {
-            rd.pipe(wr);
-        } catch(e) {
-            rd.destroy();
-            wr.end();
-            reject(e);
-        }
-    });
-            
-              
-};
-
 /** Returns the size in bytes of a file
  * @alias BisGenericIO#getFileSize
  * @param {String} url - the filename
@@ -320,6 +283,27 @@ let isDirectory=function(url) {
     return Promise.resolve(m);
 };
 
+/**
+ * Gets the stats object for a file. Currently only for file server.
+ * @alias BisGenericIO#getFileStats
+ * @param {String} url - the file string
+ * @returns {Promise} - promise resolving 
+ */
+let getFileStats=function(url) {
+
+    console.log('get file stats');
+    if (fileServerClient) {
+        return fileServerClient.getFileStats(url);
+    }
+
+    if (inBrowser) {
+        return Promise.reject('getFileStats cannot be done in a Browser');
+    }
+
+    let m=fs.lstatSync(url);
+    return Promise.resolve(m);
+};
+
 /** Create the directory in url
  * @alias BisGenericIO#makeDirectory
  * @param {String} url - the directory string
@@ -344,12 +328,11 @@ let makeDirectory=function(url) {
     return Promise.resolve(m);
 };
 
-/** Checks is a path is a directory
- * @alias BisGenericIO#isDirectory
+/** Checks is a path is a directory, then deletes it if it can
+ * @alias BisGenericIO#deleteDirectory
  * @param {String} url - the directory name
  * @returns {Promise} - the payload is true or false
  */
-
 let deleteDirectory=function(url) {
 
     if (fileServerClient) {
@@ -372,6 +355,82 @@ let deleteDirectory=function(url) {
     });
 };
 
+/**
+ * Tries to move a directory from source to destination. Currently only for fileserver. 
+ * 
+ * @alias BisGenericIO#moveDirectory
+ * @param {String} url - name of source and destination, separated by '&&'
+ * @returns {Promise} - the payload is true or false
+ */
+let moveDirectory=function(url) {
+
+    if (fileServerClient) {
+        return fileServerClient.moveDirectory(url);
+    }
+
+    if (inBrowser) {
+        return Promise.reject('moveDirectory can not be  done in a  Browser');
+    }
+
+    let splitNames = splitFilenames(url);
+    let src = splitNames[0], dest = splitNames[1];
+
+    if (!fs.lstatSync(src).isFile())
+        return Promise.reject(src + ' does not describe a file, cannot move it.');
+    
+    return new Promise( (resolve, reject) => {
+        fs.copyFile(src, dest, (err) => {
+            if (err) { console.log('Encountered an error trying to move file', src, err); reject(false); return; }
+            fs.unlink(src, (err) => {
+                if (err) { console.log('Encountered an error trying to delete', src, err); reject(false); return; }
+
+                console.log('Move file operation successful');
+                resolve(true);
+            });
+        });
+    });
+};
+ 
+/** Copies a single file
+ * @param {String} url - Source and destination 
+ * @returns {Promise} without payload
+ */
+
+let copyFile=function(url) {
+
+    if (fileServerClient) {
+        try {
+            return fileServerClient.copyFile(url);
+        } catch (e) {
+            return Promise.reject('No copy file functionality');
+        }
+    }
+
+    if (inBrowser) {
+        return Promise.rejected('copyFile can not be  done in a  Browser');
+    }
+
+    let splitNames = splitFilenames(url);
+    let src = splitNames[0], dest = splitNames[1];
+
+    // https://stackoverflow.com/questions/11293857/fastest-way-to-copy-file-in-node-js
+    let rd = fs.createReadStream(src);
+    let wr = fs.createWriteStream(dest);
+    return new Promise(function(resolve, reject) {
+        rd.on('error', reject);
+        wr.on('error', reject);
+        wr.on('finish', resolve);
+        try {
+            rd.pipe(wr);
+        } catch(e) {
+            rd.destroy();
+            wr.end();
+            reject(e);
+        }
+    });
+            
+              
+};
 
 /** Returns matching files in a path
  * @alias BisGenericIO#getMatchingFiles
@@ -538,6 +597,76 @@ let isSaveDownload =function() {
     return false;
 };
 
+
+// TODO: Let's rename this to dicomConversion
+/**
+ * Runs file conversion for a given filetype using server utilities. 
+ * 
+ * @param {Object} params - Parameter object for the file conversion. 
+ * @param {String} params.fileType - The type of the file to convert from. Currently supports 'dicom'.
+ * @param {String} params.inputDirectory - The input directory to run file conversions in. 
+ */
+let runFileConversion = (params) => {
+
+    /*let updateFn = (obj) => {
+        console.log('update fn', obj);
+    };*/
+
+    return new Promise( (resolve, reject) => {
+        if (fileServerClient) {
+            if (params.fileType === 'dicom') {
+                fileServerClient.runModule('dicomconversion', params, console.log, true)
+                    .then((obj) => {
+                        console.log('Conversion done', obj);
+                        resolve(obj);
+                    }).catch((e) => { reject(e); });
+            } else {
+                reject('Error: unsupported file type', params.fileType);
+            }
+        } else {
+            reject('No fileserver client defined');
+        }
+    });
+};
+/**
+ * Makes a SHA256 checksum for a given image file. Currently only functional if a file server is specified.
+ * Note that this function only works when calling from the web environment. Bisweb modules calculate their own checksums due to genericio not being directly compatible with modules.
+ * 
+ * @param {String} url - Filename of image to make checksum for.
+ * @returns Promise that will resolve the checksum, or false if no file server client is specified.
+ */
+let makeFileChecksum = (url) => {
+
+    if (fileServerClient) {
+        return fileServerClient.runModule('makechecksum', { 'url' : url });
+    } else if (inBrowser) {
+        console.log('Cannot perform makeFileChecksum without a file server client.');
+        return false;
+    } 
+
+    return new Promise( (resolve, reject) => {
+        read(url, true).then( (obj) => {
+            let hash = util.SHA256(obj.data);
+            //resolves data structure in an 'output' field for cross-compatibility with objects returned by the server
+            if (hash) { resolve( { 'output' : { 'hash' : hash, 'filename' : url } } ); }
+
+            reject(hash);
+        }).catch( (e) => {
+            reject(e);
+        });
+    });
+};
+
+/**
+ * Splits a filename concatenated by the symbol '&&' into two names.
+ * 
+ * @param {String} url - Two filenames, concatenated by '&&'.
+ * @returns Array of filenames.
+ */
+let splitFilenames = (url) => {
+    return url.split('&&');
+};
+
 // -------------------------------------------------------------------------------------------------------
 
 // Export object
@@ -550,6 +679,8 @@ const bisgenericio = {
     getpathmodule : biscoreio.getpathmodule,
     getosmodule : biscoreio.getosmodule,
     getglobmodule : biscoreio.getglobmodule,
+    getcolorsmodule : biscoreio.getcolorsmodule,
+    getchildprocessmodule : biscoreio.getchildprocessmodule,
     tozbase64 :  biscoreio.tozbase64,
     fromzbase64 : biscoreio.fromzbase64,
     string2binary : biscoreio.string2binary ,
@@ -570,12 +701,14 @@ const bisgenericio = {
     getFixedSaveFileName : getFixedSaveFileName,
     getFixedLoadFileName : getFixedLoadFileName,
     // Operations needed for Bruker and more
-    copyFile : copyFile,
+    copyFile :     copyFile,
     getFileSize :     getFileSize,
+    getFileStats:     getFileStats,
     isDirectory :     isDirectory,
     getMatchingFiles : getMatchingFiles,
     makeDirectory :    makeDirectory,
     deleteDirectory :  deleteDirectory,
+    moveDirectory : moveDirectory,
     // Filename operations
     getBaseName : getBaseName,
     getDirectoryName : getDirectoryName,
@@ -584,6 +717,8 @@ const bisgenericio = {
     getPathSeparator : getPathSeparator,
     //
     isSaveDownload : isSaveDownload,
+    runFileConversion : runFileConversion,
+    makeFileChecksum : makeFileChecksum,
 };
 
 

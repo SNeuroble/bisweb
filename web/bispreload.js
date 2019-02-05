@@ -37,6 +37,8 @@ window.BISELECTRON = {
     os : require('os'),
     glob : require('glob'),
     rimraf : require('rimraf'),
+    child_process : require('child_process'),
+    colors : require('colors/safe'),
     ipc : electron.ipcRenderer,
     dialog : remote.require('electron').dialog,
     remote : remote,
@@ -44,9 +46,60 @@ window.BISELECTRON = {
     electron : electron,
 };
 
+
 process.once('loaded', () => {
     global.electron = require('electron');
     electron.webFrame.setZoomFactor(1.0);
 });
 
 
+window.BISELECTRON.loadtf=((mode) => {
+
+    let tf=null;
+    let tfmodulename='electron js';
+    let done=false;
+
+    try {
+        tf=require('@tensorflow/tfjs');
+    } catch(e) {
+        console.log('---- no tensorflow modules available');
+        return {
+            tf : null,
+            name : ''
+        };
+    }
+
+
+    if (mode>0) {
+        
+        if (mode>1) {
+            try {
+                require('@tensorflow/tfjs-node-gpu');
+                tfmodulename='electron tjsfs-node-gpu';
+                done=true;
+            } catch(e) {
+                console.log('Failed to load gpu version '+e);
+            }
+        }
+
+        if (!done) {
+            try {
+                require('@tensorflow/tfjs-node');
+                tfmodulename='electron tfjs-node';
+                console.log("Loaded cpu version of tfjs");
+            } catch(e) {
+                console.log('Failed to load cpu version '+e);
+            }
+        }
+    
+        if (done===false) {
+            console.log('---- no tensorflow-node.js modules available');
+        }
+    }
+    
+    return {
+        tf : tf,
+        name : tfmodulename
+    };
+
+});

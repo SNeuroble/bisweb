@@ -65,6 +65,7 @@ class BaseModule {
      * @returns {Promise} 
      */
     execute(inputs, params = {}) {
+        
         let fullparams = this.parseValuesAndAddDefaults(params);
         let des = this.getDescription();
 
@@ -83,11 +84,11 @@ class BaseModule {
 
         const self=this;
         let name=this.name;
-        
+
         return new Promise( (resolve,reject) => { 
-            self.directInvokeAlgorithm(fullparams).then( () => {
+            self.directInvokeAlgorithm(fullparams).then( (m) => {
                 self.storeCommentsInOutputs(baseutils.getExecutableArguments(name), params, baseutils.getSystemInfo(biswrap));
-                resolve();
+                resolve(m);
             }).catch( (e) => {
                 reject(e);
             });
@@ -106,26 +107,35 @@ class BaseModule {
 
     /** Returns a clean dictionary of key:value.
      * Logic first use cmd.name if not defined then extra.name else use param.default
-     * @param {cmd} -- the program object from commander
+     * @param {cmd} -- the parameters provided by commander or the file server
      * @param {extra} -- an extra dictionary most likely from a parameter file containing some parameters 
      * @returns {Dictionary} of parameter names and values */
     parseValuesAndAddDefaults(cmd, extra = {}) {
         let des = this.getDescription();
         let out = {};
-        des.params.forEach((param) => {
-            let vname = param.varname;
-            let name = vname.toLowerCase();
+        let parsedCmd = {};
 
-            if (cmd[name] === undefined || cmd[name] === null) {
+        //make case insensitive directory of input parameters
+        let cmdKeys = Object.keys(cmd);
+        for (let key of cmdKeys) {
+            let lowerCasedKey = key.toLowerCase();
+            parsedCmd[lowerCasedKey] = cmd[key];
+        }
+        
+        des.params.forEach((param) => {
+            let rawName = param.varname;
+            let name = rawName.toLowerCase();
+
+            if (parsedCmd[name] === undefined || parsedCmd[name] === null) {
                 if (extra[name] === undefined || extra[name] === null) {
                     let defaultv = param['default'];
                     if (defaultv !== undefined)
-                        out[vname] = defaultv;
+                        out[rawName] = defaultv;
                 } else {
-                    out[vname] = extra[name];
+                    out[rawName] = extra[name];
                 }
             } else {
-                out[vname] = cmd[name];
+                out[rawName] = parsedCmd[name];
             }
         });
         return out;
@@ -230,7 +240,7 @@ class BaseModule {
 
         param.type = param.type || "string";
 
-        if (param.default === undefined) {
+        if (param.default === undefined && param.type !== 'string') {
             console.log('Parameter', param.name, 'does not have a default value');
             return false;
         }
@@ -281,7 +291,7 @@ class BaseModule {
                 vals[param.varname] === undefined ||
                 !this.typeCheckParam(param, vals[param.varname])
                ) {
-                console.log('Error: parameter with name=', param.varname, ', and  value=', vals[param.varname], ' does not match expected.');
+                console.log('Error: parameter with name=', param.varname, 'and  value=', vals[param.varname], ' does not match expected.');
                 return false;
             }
 
@@ -415,7 +425,7 @@ class BaseModule {
      * @param{array} params - remaining parameters
      * @returns {Promise}
      */
-    loadInputs(inputparameters = {}) {
+    loadInputs(inputparameters = {},basedirectory='') {
         let p = [];
         let des = this.getDescription();
 
@@ -431,8 +441,8 @@ class BaseModule {
                 return null;
             }
             if (required || inpname !== null) {
-                console.log('.... Queuing reading of ' + objtype + ' ' + name + ' from: ' + inpname);
-                p.push(this.loadSingleInput(name, inpname, objtype));
+                console.log('.... Queuing reading of ' + objtype + ' ' + name + ' from: ' + basedirectory+inpname);
+                p.push(this.loadSingleInput(name, basedirectory+inpname, objtype));
             }
         });
 
@@ -446,7 +456,7 @@ class BaseModule {
                 self.description = self.updateOnChangedInput(null);
                 resolve();
             }).catch((e) => {
-                reject(e.stack);
+                reject(e);
             });
         });
     }

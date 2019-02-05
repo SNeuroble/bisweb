@@ -25,7 +25,7 @@
  */
 
 
-let filesaver, fs = null, zlib, nodewin = {}, path = null, os=null,glob=null,rimraf=null;
+let filesaver, fs = null, zlib, nodewin = {}, path = null, os=null,glob=null,rimraf=null,noderequest=null,colors=null,child_process=null;
 let environment = '';
 let inelectron = false;
 let webWorkerScope;
@@ -38,20 +38,25 @@ if (typeof (window) !== "undefined") {
 
 let pako = require('pako');
 let webpack = process.browser || false;
+const bisexternals=require('bis_externals');
 
 if (!webpack) {
-    fs = require('fs');
-    zlib = require('zlib');
-    path = require('path');
-    os = require('os');
-    glob = require('glob');
-    rimraf= require('rimraf');
+
+    fs = bisexternals['fs'];
+    zlib = bisexternals['zlib'];
+    path = bisexternals['path'];
+    os = bisexternals['os'];
+    noderequest = bisexternals['request'];
+    glob = bisexternals['glob'];
+    rimraf= bisexternals['rimraf'];
+    nodewin.atob = bisexternals['atob'];
+    nodewin.btoa = bisexternals['btoa'];
+    child_process= bisexternals['child_process'];
+    colors= bisexternals['colors'];
     environment = 'node';
-    nodewin.atob = require('atob');
-    nodewin.btoa = require('btoa');
 } else {
     try  {
-        filesaver = require('FileSaver');
+        filesaver = bisexternals['FileSaver'];
         console.log("++++ In Browser");
     }
     catch(e)  {
@@ -67,18 +72,25 @@ var createBuffer = function (cdata) {
     if (cdata === null)
         return null;
     /* jshint ignore:start */
+    if (Buffer.from && Buffer.from !== Uint8Array.from) {
+        return  Buffer.from(cdata);
+    } 
+
     return new Buffer(cdata);
+
     /* jshint ignore:end */
 };
 
 
 if (inelectron) {
     fs = window.BISELECTRON.fs;
-    rimraf = window.BISELECTRON.rimraf,
+    rimraf = window.BISELECTRON.rimraf;
     zlib = window.BISELECTRON.zlib;
     path = window.BISELECTRON.path;
     os = window.BISELECTRON.os;
     glob = window.BISELECTRON.glob;
+    child_process= window.BISELECTRON['child_process'];
+    colors= window.BISELECTRON['colors'];
     environment = 'electron';
     createBuffer = function (cdata) {
         return new window.BISELECTRON.Buffer(cdata);
@@ -466,6 +478,44 @@ var readbinarydatabrowser = function (file, loadedcallback, errorcallback) {
 };
 
 // -------------------------------------------- Read URL ---------------------------------------------------------------------
+/** read  data from url in node.js
+ * @alias BisCoreGenericIO~readtextdataurl_node
+ * @param {string} url - the url
+ * @param {Boolean} binary - if true binary
+ * @param {BisCoreGenericIO.TextDataRead} callback - callback function
+ * @param {BisCoreGenericIO.MessageCallback} errror - error callback function
+ */
+var readdatafromurl_node = function (url, binary,loadedcallback, errorcallback) {
+
+    let settings= {
+        url : url,
+        method : 'GET',
+    };
+
+    if (binary) {
+        settings.encoding=null;
+    }
+    
+    noderequest(settings, function (error, response, body) {
+
+        if (error!==null)
+            errorcallback(error);
+
+        if (!binary) {
+            loadedcallback(body,url);
+            return;
+        }
+
+        let dt=new Uint8Array(body);
+        
+        let comp = iscompressed(url);
+        if (comp) 
+            dt = pako.ungzip(dt);
+            
+        loadedcallback(dt,url);
+    });
+
+};
 
 /** read text data from url.
  * @alias BisCoreGenericIO~readtextdataurl
@@ -475,6 +525,10 @@ var readbinarydatabrowser = function (file, loadedcallback, errorcallback) {
  */
 var readtextdatafromurl = function (url, loadedcallback, errorcallback, requestheader = null, realname = null) {
 
+    if (environment === 'node') 
+        return readdatafromurl_node(url,false,loadedcallback,errorcallback);
+
+    
     var xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.responseType = 'text';
@@ -509,6 +563,10 @@ var readtextdatafromurl = function (url, loadedcallback, errorcallback, requesth
  * @param {BisCoreGenericIO.MessageCallback} errror - error callback function
  */
 var readbinarydatafromurl = function (url, loadedcallback, errorcallback, requestheader = null, realname = null) {
+
+
+    if (environment === 'node') 
+        return readdatafromurl_node(url,true,loadedcallback,errorcallback);
 
     var xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
@@ -639,7 +697,7 @@ var writetextdatabrowser = function (filename, data, donecallback) {
 
     donecallback = donecallback || console.log;
 
-    var blob = new Blob([data], { type: "text/plain" });
+    var blob = new Blob([data], { type: "application/octet-stream" });
 
     filesaver(blob, filename);
     donecallback('');
@@ -660,9 +718,9 @@ var writebinarydatabrowser = function (filename, data, donecallback) {
     var iscomp = iscompressed(filename);
     if (iscomp) {
         var compressed = pako.gzip(data);
-        blob = new Blob([compressed]);
+        blob = new Blob([compressed],{ type: "application/gzip" });
     } else {
-        blob = new Blob([data]);
+        blob = new Blob([data],{ type: "application/octet-stream" });
     }
 
     filesaver(blob, filename);
@@ -701,9 +759,17 @@ var readtextdata = function (url, loadedcallback, errorcallback) {
         return;
     }
 
+    if (typeof url === 'string') {
+        if (url.indexOf('http')===0) {
+            return readtextdatafromurl(url, loadedcallback, errorcallback);
+        }
+    }
+
+
     if (environment === 'node') {
         return readtextdatanode(url, loadedcallback, errorcallback);
     }
+
 
     if (environment === 'electron') {
         return readdataelectron(url, false, loadedcallback, errorcallback);
@@ -731,9 +797,17 @@ var readbinarydata = function (url, loadedcallback, errorcallback) {
         return;
     }
 
+    if (typeof url === 'string') {
+        if (url.indexOf('http')===0) {
+            return readbinarydatafromurl(url, loadedcallback, errorcallback);
+        }
+    }
+
+
     if (environment === 'node') {
         return readbinarydatanode(url, loadedcallback, errorcallback);
     }
+
 
     if (environment === 'electron') {
         return readdataelectron(url, true, loadedcallback, errorcallback);
@@ -934,6 +1008,25 @@ var getrimrafmodule = function () {
     return rimraf;
 };
 
+
+/* Return the colors package to use
+ * @alias BisCoreGenericIO#getcolorsmodule
+ * @returns{Module} 
+ */
+var getcolorsmodule = function () {
+    return colors;
+};
+
+
+/* Return the child process package to use
+ * @alias BisCoreGenericIO#getchildprocessmodule
+ * @returns{Module} 
+ */
+var getchildprocessmodule = function () {
+    return child_process;
+};
+
+// --------------------------------------------------------------------
 /** returns the image path for bisweb */
 let getimagepath=function() {
 
@@ -943,7 +1036,7 @@ let getimagepath=function() {
         let index=scope.lastIndexOf("/");
         if (scope.indexOf("external")>0)  {
             scope=scope.substr(0,index)+"/../src/web/images";
-            console.log('external=',external,scope);
+            console.log('external=',scope);
         } else {
             scope=scope.substr(0,index)+"/images";
         }
@@ -959,7 +1052,11 @@ let getimagepath=function() {
             scope=scope.substr(7,index-7)+"/images";
         const path=getpathmodule();
         imagepath=path.resolve(scope);
-        console.log('Imagepath=',imagepath);
+        //        console.log('Imagepath=',imagepath);
+
+    } else if (webWorkerScope) {
+        console.log('In Web Worker ...');
+        console.log('Web Worker can not get path, or perform fetch');
 
     } else {
         const path=getpathmodule();
@@ -984,6 +1081,8 @@ const biscoregenericio = {
     getpathmodule : getpathmodule,
     getosmodule : getosmodule,
     getglobmodule : getglobmodule,
+    getcolorsmodule : getcolorsmodule,
+    getchildprocessmodule : getchildprocessmodule,
     getrimrafmodule :     getrimrafmodule,
     tozbase64 : tozbase64,
     fromzbase64 : fromzbase64,

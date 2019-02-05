@@ -134,8 +134,7 @@ const genericio= require('bis_genericio');
 
 const names = ["default", "primary", "success", "info", "warning", "danger", "link"];
 const directions = ["top", "bottom", "left", "right"];
-
-let tools=require('../../web/images/tools.json');
+const bisdate=require('bisdate.js');
 
 /** A JQuery object that is a wrapper around the DOM objects. 
  * See: {@link http://learn.jquery.com/using-jquery-core/jquery-object/}.
@@ -149,7 +148,9 @@ const internal = {
     alertcount: 0,
     alerttimeout: 8000,
     alerttop: 70,
+    imagepath : null,
 };
+
 
 
 /**
@@ -162,6 +163,8 @@ let deleteModal = (modal) => {
 };
 
 const webutil = {
+
+
 
     /** set alert top 
      * @alias WebUtil.setAlertTop
@@ -453,12 +456,10 @@ const webutil = {
         var css = opts.css || null;
         var classname = opts.classname || null;
 
-        var bbar;
-        if (classname === null)
-            bbar = $("<div></div>");
-        else
-            bbar = $("<div class=\"" + classname + "\"></div>");
-
+        let bbar = $("<div></div>");
+        if (classname !== null)
+            bbar.addClass(classname);
+        
         if (css !== null)
             bbar.css(css);
         if (parent !== null)
@@ -544,78 +545,10 @@ const webutil = {
     },
 
 
-    /** 
-     * function that creates a checkbox using Jquery/Bootstrap (for styling)
-     * @alias WebUtil.createtogglecheckbox
-     * @param {object} opts - the options object.
-     * @param {string} opts.name - the name (text) of the element
-     * @param {string} opts.parent - the parent element. If specified the new button will be appended to it.
-     * @param {object} opts.css - if specified set the value of the `bis' attribute to this
-     * @param {string} opts.type - type of button (for bootstrap styling). One of "default", "primary", "success", "info", "warning", "danger", "link". This is used for the label that is part of the checkbox.
-     * @param {string} opts.tooltip - string to use for tooltip
-     * @param {string} opts.position - position of tooltip (one of top,bottom,left,right)
-     * @param {function} opts.callback - if specified adds this is a callback ``on change''. The event (e) is passed as argument.
-     * @returns {JQueryElement} 
-     */
-    createtogglecheckbox: function (opts) {
-        opts = opts || {};
-        var checked = opts.checked || false;
-        var callback = opts.callback || undefined;
-
-        if (callback !== undefined) {
-            if (typeof callback !== "function")
-                throw (new Error(callback + ' is not a function in creating select ' + names));
-        } else
-            throw (new Error(callback + ' is not a function in creating select ' + names));
-
-        var btn;
-        var enablecallback = false;
-        var mycallback = function () {
-            var state = btn.data('state');
-            if (enablecallback) {
-                state = !state;
-                btn.data('state', state);
-            }
-            btn.blur();
-
-            if (!state) {
-                btn.css({
-                    'border-radius': '0px',
-                    'color': "#bbbbbb"
-                });
-
-                btn.removeClass('btn-success');
-                btn.addClass('btn-default');
-            } else {
-                btn.css({
-                    'border-radius': '20px',
-                    'color': "#ffffff"
-                });
-                btn.addClass('btn-success');
-                btn.removeClass('btn-default');
-            }
-
-            if (enablecallback)
-                callback(state);
-        };
-        if (checked)
-            opts.type = "success";
-        else
-            opts.type = "default";
-
-
-        opts.callback = mycallback;
-        btn = this.createbutton(opts);
-        btn.css({ 'outline': '0px' });
-        btn.data('state', checked);
-        mycallback();
-        enablecallback = true;
-        return btn;
-    },
 
     /** 
      * function that creates a radio button set element using Jquery/Bootstrap (for styling)
-     * @alias WebUtil.createselect
+     * @alias WebUtil.createradiobuttonset
      * @param {object} opts - the options object.
      * @param {array} opts.values - an array with all the options to create (e.g. [ "Red", "Green", "Blue" ]
      * @param {array} opts.value - the current value e.g. "Red"
@@ -752,10 +685,11 @@ const webutil = {
         var index = opts.index || -1;
         var parent = opts.parent || null;
         var size = opts.size || 1;
-        var css = opts.css || { 'background-color': "#505050", 'color': "#ffffff" };
+        var css = opts.css || { };
         var cssclass = opts.class || "dg c select";
         var callback = opts.callback || undefined;
-
+        cssclass +=" biswebselect";
+        
         var select = $("<select class=\"" + cssclass + "\" + size=\"" + size + "\"></select>");
         var np = names.length;
         for (var i = 0; i < np; i++) {
@@ -817,6 +751,7 @@ const webutil = {
             body: div.find('.modal-body'),
             footer: div.find('.modal-footer'),
             header: div.find('.modal-header'),
+            titlediv : div.find('.modal-title'),
             close: div.find('btn-default'),
         };
     },
@@ -908,10 +843,9 @@ const webutil = {
      * @param {function} callback - the callback for item
      * @param {string} css - extra css attributes (as string)
      */
-    createDropdownItem : function (dropdown,name,callback,css='') {
-        if (css==='')
-            css="background-color: #303030; color: #ffffff; font-size:13px; margin-bottom: 2px";
-        return this.createMenuItem(dropdown,name,callback,css);
+    createDropdownItem : function (dropdown,name,callback,classname='') {
+        classname= classname || 'biswebdropdownitem';
+        return this.createMenuItem(dropdown,name,callback,'',classname);
     },
 
     createDropdownMenu : function (name,parent) {
@@ -921,7 +855,7 @@ const webutil = {
         let txt=$(`<div class="dropdown" style="display: inline-block">
                   <button id="${nid}" type="button" class="btn btn-default btn-sm" style="margin-left: 2px" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                   ${name} <span class="caret"></span></button>
-                  <ul class="dropdown-menu" class="label-info"  style="background-color : #303030" aria-labelledby="${nid}">
+                  <ul class="dropdown-menu" class="label-info"  style="biswebpanel" aria-labelledby="${nid}">
                   </ul>
                   </div>`);
         parent.append(txt);
@@ -938,26 +872,6 @@ const webutil = {
      */
     removedatclose: function (folder) {
         $(folder.domElement).find(".close-button").remove();
-    },
-
-    /** get an active color (e.g. red background when control is live)
-     * @alias WebUtil.getactivecolor
-     * @returns {string} - color
-     */
-    getactivecolor: function () {
-        return "#440000";
-    },
-
-    /** get a passive color (e.g. gray background when control is inactive)
-     * @alias WebUtil.getpassivecolor
-     * @returns {string} - color
-     */
-    getpassivecolor: function () {
-        return "#303030";
-    },
-
-    getpassivecolor2: function () {
-        return "#383838";
     },
 
     // ------------------------------------------------------------------------
@@ -995,11 +909,12 @@ const webutil = {
      * @param {string} name - the menu name (if '') adds separator
      * @param {function} callback - the callback for item
      * @param {string} css - styling info for link element
+     * @param {string} classname - extra class info for link element
      * activated by pressing this menu
      * @alias WebUtil.createMenuItem
      * @returns {JQueryElement} -- the  element
      */
-    createMenuItem: function (parent, name, callback,css='') {
+    createMenuItem: function (parent, name, callback,css='',classname='') {
 
         var menuitem;
         name = name || '';
@@ -1015,8 +930,12 @@ const webutil = {
         if (css.length>1)
             style=` style="${css}"`;
         
-        menuitem = $(`<li><a href="#" ${style}>${name}</a></li>`);
+        menuitem = $(`<li></li>`);
+        let linkitem=$(`<a href="#" ${style}>${name}</a></li>`);
+        menuitem.append(linkitem);
         parent.append(menuitem);
+        if (classname.length>0)
+            linkitem.addClass(classname);
 
         this.disableDrag(menuitem,true);
 
@@ -1031,12 +950,14 @@ const webutil = {
     },
     // ------------------------------------------------------------------------
     /** create alert message
-     * @param {string} text - 
+     * @param {string} text - text to display in the alert message
      * @param {boolean} error  - if true this is an error else info;
      * @param {JQueryElement} parent - the parent to add this to. Uses $('body') if not specified.
+     * @param {Object} options - additional options for the alert.
+     * @param {Boolean} options.makeLoadSpinner - if set to true, creates a spinning icon at the beginning of the alert
      * @alias WebUtil.createAlert
      */
-    createAlert: function (text, error, top=0,timeout=0) {
+    createAlert: function (text, error, top=0, timeout=0, options = {}) {
 
         // Remove all previous alerts -- only one is needed
         $('.alert-success').remove();
@@ -1052,10 +973,21 @@ const webutil = {
         else if (error==="progress")
             b='success';
 
-        let w = $(`<div class="alert alert-${b} alert-dismissible" role="alert"  
-style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alertcount}">
- <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>${text}</div>`);
+
+        let w = $(`
+            <div class="alert alert-${b} alert-dismissible" role="alert" style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alertcount}">
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+                <span class='glyphicon glyphicon-refresh glyphicon-refresh-animate' style='display: none'></span>  ${text}
+            </div>`
+        );
         
+        if (options.makeLoadSpinner) {
+            //enable the loading spinner in w
+            w.find('.glyphicon-refresh-animate').css('display', '');
+        }
+
         $('body').append(w);
         internal.alertcount += 1;
         w.alert();
@@ -1069,6 +1001,14 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
                 }
             }, timeout );
         }
+    },
+
+    /**
+     * Dismisses any alerts visible on the screen.
+     */
+    dismissAlerts() {
+        $('.alert-success').remove();
+        $('.alert-info').remove();
     },
 
     // ---------------- drag and drop controller ----------------
@@ -1241,7 +1181,7 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
                     gplextra=` (See also <a href="https://github.com/bioimagesuiteweb/gplcppcode" target="_blank">the plugin repository.</a>)`;
                 
                 
-                resolve(`<p>This application is part of BioImage Suite Web ${tools.version}.</p><p>BioImage Suite Web is an <a href="https://github.com/bioimagesuiteweb/bisweb" target="_blank">open source</a> software package.${gplextra}</p><p>We gratefully acknowledge
+                resolve(`<p>This application is part of BioImage Suite Web ${bisdate.version}.</p><p>BioImage Suite Web is an <a href="https://github.com/bioimagesuiteweb/bisweb" target="_blank">open source</a> software package.${gplextra}</p><p>We gratefully acknowledge
                           support from the <a href="https://www.braininitiative.nih.gov/" target="_blank">NIH Brain Initiative</a> under grant R24 MH114805 (Papademetris X. and Scheinost D. PIs).</p><p>${extra}</p>`);
             }).catch( (e) => { reject(e); });
         });
@@ -1257,7 +1197,16 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
 
 
     /** get full path to html file */
+    setWebPageImagePath(name) {
+        internal.imagepath=name;
+        console.log('Setting BASE URL for images to '+name);
+    },
+    
+    
+    /** get full path to html file */
     getWebPageImagePath() {
+        if (internal.imagepath!==null)
+            return internal.imagepath;
         return genericio.getimagepath();
     },
     
@@ -1275,6 +1224,25 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
         scope=scope.substr(0,index);
         return scope;
     },
+
+    getScope() {
+    
+        let scope=window.document.URL;
+        let index=scope.indexOf(".html");
+        if (index>0) {
+            index=scope.lastIndexOf("/");
+            scope=scope.substr(0,index+1);
+        } else {
+            let index=scope.indexOf("#");
+            if (index>0) {
+                index=scope.lastIndexOf("/");
+                scope=scope.substr(0,index+1);
+            }
+        }
+        return scope;
+    },
+
+
     
     /** returns the templates stored in this file */
     getTemplates: function () {
@@ -1297,6 +1265,7 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
         //https://stackoverflow.com/questions/807878/javascript-that-executes-after-page-load
         if (window.attachEvent) {
             window.attachEvent('onload', clb);
+            window.attachEvent('onerror', clb);
         } else {
             if (window.onload) {
                 let currentOnLoad = window.onload;
@@ -1305,8 +1274,10 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
                     clb();
                 };
                 window.onload = newOnload;
+                window.onerror = newOnload;
             } else {
                 window.onload = clb;
+                window.onerror = clb;
             }
         }
     },
@@ -1327,6 +1298,28 @@ style="position:absolute; top:${top}px; left:10px; z-index:${1000+internal.alert
         }
     },
 
+
+    /** load javascript module and return a promise
+     * @param{url} - the script url
+     */
+    loadJavaScriptModule : function (url) {
+
+        return new Promise( (resolve,reject) => {
+            let apiTag = document.createElement('script');
+            apiTag.src = url;
+            apiTag.onload = ( () => {
+                console.log(' URL=',url);
+            });
+            
+            apiTag.onerror=( (e) => {
+                reject("Failed to load tfjs module"+e);
+            });
+
+            document.head.appendChild(apiTag);
+        });
+    },
+    
+    
     /**
      * Searches query string of URL for a value given by 'name'.
      * Taken from https://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript/901144#901144
@@ -1361,6 +1354,8 @@ if (typeof (document) !== "undefined") {
         bisdialog: newDiv.querySelector('#bisdialog'),
         bisscrolltable: newDiv.querySelector('#bisscrolltable'),
     };
+
+
 }
 
 module.exports = webutil;

@@ -36,6 +36,9 @@ let getTime = function() {
     return  "[" + hour + ":" + min + ":" + sec +"]";
 };
 
+
+// -------------------------------------------------------------------------------
+
 const electron = require('electron');
 require('electron-debug')({showDevTools: false,
                            enabled : true});
@@ -56,7 +59,12 @@ const state = {
     },
     console : null,
     consolehandler : null,
-    indev : process.defaultApp || /[\\/]electron-prebuilt[\\/]/.test(process.execPath) || /[\\/]electron[\\/]/.test(process.execPath)
+    indev : process.defaultApp || /[\\/]electron-prebuilt[\\/]/.test(process.execPath) || /[\\/]electron[\\/]/.test(process.execPath),
+    dimensions : {
+        width : 1024,
+        height : 1024,
+    },
+    toolname : "index",
 };
 
 
@@ -86,19 +94,101 @@ if (state.indev) {
 }
 
 
+
 state.mainfilename=state.mainfilename || "";
 // Check if filename ends in .html if not add it
 if (state.mainfilename!=='') {
+
+
     let ext=state.mainfilename.split('.').pop();
-    if (ext!=='html')
+    if (ext!=='html')  {
+        state.toolname=state.mainfilename;
         state.mainfilename+='.html';
+    }
 }
 
 // ----------------------------------------------------------------------------------------
+var getHeightWidth= function(name) {
+
+    let tools=toolfile.tools;
+    
+    const obj = {
+        height : 900,
+        width : 1024
+    };
+
+    const maxw=electron.screen.getPrimaryDisplay().workAreaSize.width;
+    const maxh=electron.screen.getPrimaryDisplay().workAreaSize.height;
+    const scale=   electron.screen.getPrimaryDisplay().scaleFactor || 1.0;
+    
+    let found=false,i=0;
+    let keys=Object.keys(tools);
+    
+    while (i<keys.length && found===false) {
+        let url=tools[keys[i]].url;
+        if (url===name) {
+            obj.height= tools[keys[i]].height || 900;
+            obj.width= tools[keys[i]].width || 700;
+            obj.height=Math.round(obj.height*scale);
+            obj.width=Math.round(obj.width*scale);
+            found=true;
+        } else {
+            i=i+1;
+        }
+    }
+
+    if (!found && name.indexOf("test")>0) {
+        obj.width=maxw;
+        obj.height=maxh;
+    } else if (!found && name.indexOf("index")>=0) {
+        obj.width=Math.round(650*scale);
+        obj.height=Math.round(600*scale);
+    }
+
+    
+    if (obj['width']>maxw)
+        obj['width']=maxw;
+    else if (obj['width']<600)
+        obj['width']=600;
+
+    if (obj.height<600)
+        obj.height=600;
+    
+    if (obj.height>maxh)
+        obj.height=maxh;
+
+
+    return obj;
+};
 
 var createWindow=function(index,fullURL) {
 
-    var opts= {width: 1024, height: 900};
+    fullURL = fullURL || state.toolname;
+    let i0=fullURL.lastIndexOf("\\");
+
+    if (i0<0)
+        i0=fullURL.lastIndexOf("/");
+    if (i0>=0)
+        i0+=1;
+
+
+    let i1=fullURL.lastIndexOf(".html");
+    let name=state.toolname;
+    if (i1>i0 && i1>0 && i0>0) {
+        name=fullURL.substr(i0,i1-i0);
+    } else if (i0>0 && i1<0) {
+        name=fullURL.substr(i0,fullURL.length);
+    } else if (i0<0 && i1>0) {
+        name=fullURL.substr(0,i1);
+    }
+        
+    state.dimensions=getHeightWidth(name);
+
+
+    
+    let i_width= state.dimensions.width;
+    let i_height= state.dimensions.height;
+
     var xval=100;
     var yval=100;
     
@@ -112,13 +202,16 @@ var createWindow=function(index,fullURL) {
 
     
     if (index===0) {
-        opts= {width: 1024, height: 1100,maxwidth:1024 ,maxheight: 1050};
         fullURL='file://' + path.resolve(__dirname , 'index.html');
         xval=undefined;
         yval=undefined;
-    }  else {
-        opts= { width: 1200,height:1100, maxwidth: state.screensize.width, maxheight: state.screensize.height};
-    }
+    }  
+
+    let opts= { width: i_width,
+                height: i_height,
+                maxwidth: state.screensize.width,
+                maxheight: state.screensize.height
+          };
 
     
     if (opts.height>state.screensize.height-10)
@@ -136,20 +229,20 @@ var createWindow=function(index,fullURL) {
             yval=undefined;
     }
 
-    let i=fullURL.indexOf('biswebtest');
+/*    let i=fullURL.indexOf('biswebtest');
     if (i>=0) {
         xval=0;
         yval=0;
         opts.width=state.screensize.width;
         opts.height=state.screensize.height;
-    }
+    }*/
     
     
 
     
     var preload=  path.resolve(__dirname, 'bispreload.js');
-    //console.log(getTime()+' Creating new window '+fullURL + ', index='+index);
-    //console.log(getTime()+' Screen size = '+[state.screensize.width,state.screensize.height]+' size='+[opts.width,opts.height]);
+    console.log(getTime()+' Creating new window '+fullURL + ', index='+index+' dims='+JSON.stringify(opts));
+    //    console.log(getTime()+' Screen size = '+[state.screensize.width,state.screensize.height]+' size='+[opts.width,opts.height]);
     state.winlist[index]=new BrowserWindow({width: opts.width,
                                             height: opts.height,
                                             maxWidth: opts.maxwidth,
@@ -160,6 +253,7 @@ var createWindow=function(index,fullURL) {
                                             webPreferences: {
                                                 nodeIntegration: false,
                                                 preload: preload,
+                                                contextIsolation: false,
                                             },
                                             icon: __dirname+'/images/favicon.ico'});
     
@@ -304,6 +398,9 @@ var createOrShowMainWindow = function() {
     createWindow(0);
     attachWindow(0);
 };
+
+
+
 // -----------------------------------------------------------------------
 // ----------------------------------- App Level Stuff -------------------
 // -----------------------------------------------------------------------
@@ -342,6 +439,7 @@ app.on('ready', function() {
     if (state.commandargs.length>0) {
         console.log(getTime()+' Command args='+state.commandargs);
     }
+
     
     state.screensize.width=electron.screen.getPrimaryDisplay().workAreaSize.width;
     if (state.screensize.width<900)
@@ -399,12 +497,7 @@ app.on('ready', function() {
         ]);
         app.dock.setMenu(menu);
         Menu.setApplicationMenu(menu2);
-
-        
-        
     }
-
-    //createConsole();
 });
 
 app.on('activate', () => { createOrShowMainWindow();});
@@ -429,7 +522,6 @@ ipcMain.on('showconsole',function() {
 
 ipcMain.on('bisconsoleinit',function(event) {
     state.consolehandler=event.sender;
-    //    console.log(getTime()+' console initialized');
 });
 
 ipcMain.on('bisconsole', function (event,arg) {
@@ -448,19 +540,10 @@ ipcMain.on('arguments', function (event,arg) {
     if (state.winlist.length>2 || state.commandargs.length<1) {
         return;
     }
-    /*    var l=state.commandargs.length;
-          for (var i=0;i<l;i++) {
-          //      var fname=state.commandargs[i];
-          //      if (fname!=="true" && fname!=="false") {
-          //          if (path.resolve( fname ) !== path.normalize( fname )) 
-          //              state.commandargs[i]=path.resolve(__dirname , fname);
-          }
-          }*/
     console.log(getTime()+ ' Sending arguments to ' +arg);
     event.sender.send('arguments-reply',state.commandargs);
 
 });
 
-    
 
 

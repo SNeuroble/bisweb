@@ -38,3 +38,9 @@ shiftScaleImage
 smoothImage
 thresholdImage
 defaceImage
+tfRecon
+bisserver
+regressionTests
+makechecksum
+dicomconversion
+bidsconversion

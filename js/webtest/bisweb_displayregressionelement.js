@@ -25,7 +25,8 @@ const $=require('jquery');
 const bisdate=require('bisdate.js').date;
 const BisWebImage=require('bisweb_image');
 const userPreferences = require('bisweb_userpreferences.js');
-import testmodule from '../../web/images/testdata/displaytests.json';
+const gettestdata=require('./bis_gettestdata');
+import testmodule from '../../test/webtestdata/displaytests.json';
 let displaytestlist=null;
 
 
@@ -42,6 +43,10 @@ let globalParams = {
     currentViewer : null,
 };
 
+
+
+// TODO: Fix Paths for web-based test file distribution
+
 let globalImage=new BisWebImage();
 globalImage.createImage({ "dimensions" : [ 2,2,2] ,
                           "numframes" : 2,
@@ -50,21 +55,28 @@ globalImage.getImageData()[4]=2.0;
 
 // ---------------------- run Test -------------------------------------
 
-var runTest = async function(testindex,viewerindex,basestate='',viewerstate='',comparisonpng='') {
+var runTest = async function(testindex,viewerindex,basestate='',viewerstate='',
+                             comparisonpng='',isconnviewer=false) {
 
     userPreferences.setImageOrientationOnLoad('None');
 
-
-    globalParams.application.getViewer(0).setimage(globalImage);
+    if (!isconnviewer)
+        globalParams.application.getViewer(0).setimage(globalImage);
     
     try {
         console.log("Reading app state from",basestate);
-        //        globalParams.application.getViewer(0).clearobjectmap();
         globalParams.resdiv.append('<p>Reading app state from '+basestate+'</p>');
         await globalParams.application.loadApplicationState(basestate);
-        if (viewerstate)
+        console.log('App state read from ',basestate);
+        if (viewerstate) {
             await globalParams.application.loadApplicationState(viewerstate);
-        globalParams.currentViewer=globalParams.application.getViewer(globalParams.application.getVisibleTab()-1);
+            console.log('Viewer  state read from ',viewerstate);
+        }
+        if (!isconnviewer) {
+            globalParams.currentViewer=globalParams.application.getViewer(globalParams.application.getVisibleTab()-1);
+        } else {
+            globalParams.currentViewer=globalParams.application.getViewer(0);
+        }
     } catch(e) {
         throw new Error(e);
     }
@@ -79,17 +91,20 @@ var runTest = async function(testindex,viewerindex,basestate='',viewerstate='',c
     $('#resulttd').append('Result '+(testindex));
     
     let resultimg=snapshotElement.createBisWebImageFromCanvas(canvas);
+
+    console.log('Snapshot created');
     
     return new Promise( (resolve,reject) => {
         
         let loadfn=() => {
+            console.log("Image Loaded ... ");
             $('#goldtd').empty();
             $('#goldtd').append('Gold '+(testindex));
             globalParams.goldImageElement.removeEventListener('load',loadfn);
             
-            snapshotElement.createBisWebImageFromImageElement(comparisonpng).then( (goldstandard) => {
+            snapshotElement.createBisWebImageFromURL(comparisonpng).then( (goldstandard) => {
                 setTimeout( () => {
-                    globalParams.resdiv.append('<p>Reading result from: '+comparisonpng+'</p>');
+                    globalParams.resdiv.append('<p>Read result from: '+comparisonpng+'</p>');
                     console.log(goldstandard.getDescription());
                     let tst = null;
                     let dim=goldstandard.getDimensions();
@@ -122,20 +137,41 @@ var runTest = async function(testindex,viewerindex,basestate='',viewerstate='',c
                       
                     globalParams.resdiv.append(`<p><b>Result</b>: ${JSON.stringify(tst)}</p>`);
                     resolve(tst);
-                },2000);
+                },500);
             }).catch( (e) => {
                 reject(e);
             });
         };
         globalParams.goldImageElement.addEventListener('load', loadfn);
-        globalParams.goldImageElement.src=comparisonpng;
+        setTimeout( () => {
+            comparisonpng=comparisonpng+"?time=" + new Date().getTime();
+            console.log('Loading comparison from ',comparisonpng);
+            globalParams.goldImageElement.src=comparisonpng;
+        },100);
     });
 };
 
 // ---------------------- run tests -------------------------------------
 
-var runTests= async function(multiple=false) {
+var enableButtons=function(state=true) {
 
+    let bt= [  $('#compute'), $('#computesingle') ];
+    for (let i=0;i<bt.length;i++) {
+        if (state) 
+            bt[i].removeAttr('disabled');
+        else
+            bt[i].attr('disabled', 'disabled');
+    }
+};
+
+var runTests= async function(multiple=false,isconnviewer=false) {
+
+    let forcegithub= $('#usegithub').is(":checked") || false;
+    globalParams.testDataRootDirectory=gettestdata.getbase(forcegithub,true);
+    console.log('++++ Test Data Directory=',globalParams.testDataRootDirectory);
+    
+    enableButtons(false);
+    
     bis_webfileutil.setMode('local',false);
     
     globalParams.resdiv.empty();
@@ -161,7 +197,6 @@ var runTests= async function(multiple=false) {
         if (statefile.length>0) {
             statefile=globalParams.testDataRootDirectory+'/'+statefile;
         }
-
         
         let desired=displaytestlist[test]['result'];
         
@@ -170,7 +205,9 @@ var runTests= async function(multiple=false) {
             displaytestlist[test]['viewer'] || 1,
             globalParams.testDataRootDirectory+'/'+displaytestlist[test]['base'],
             statefile,
-            globalParams.testDataRootDirectory+'/'+displaytestlist[test]['comparison']);
+            globalParams.testDataRootDirectory+'/'+displaytestlist[test]['comparison'],
+            isconnviewer
+        );
 
 
         globalParams.comparisonTextElement.empty();
@@ -214,7 +251,7 @@ var runTests= async function(multiple=false) {
             fail="["+badlist.join(',')+"]";
 
         
-        webconsole.append(`Tests for version=${bisdate}: completed=${run}/${numtests}, passed=${good}/${numtests}, failed=${bad}/${numtests}.&nbsp;&nbsp;&nbsp; <EM>D e t a i l s :</EM> Passed=${ps}, Failed=${fail}, Intentionally Failed=${ifail}`);
+        webconsole.append(`<p>Tests for version=${bisdate}: completed=${run}/${numtests}, passed=${good}/${numtests}, failed=${bad}/${numtests}.&nbsp;&nbsp;&nbsp; <EM>D e t a i l s :</EM> Passed=${ps}, Failed=${fail}, Intentionally Failed=${ifail}</p>`);
 
     }
 
@@ -226,6 +263,7 @@ var runTests= async function(multiple=false) {
         else
             $('#first').val(0);
     }
+    enableButtons(true);
 };
 
 var initialize=function(testlist) {
@@ -263,9 +301,24 @@ var initialize=function(testlist) {
  * A web element that runs the regression testing in conjuction with biswebtest.html
  */
 class DisplayRegressionElement extends HTMLElement {
+
+    constructor() {
+
+        super();
+        webutil.setAlertTop(920);
+    }
+        
     
     // Fires when an instance of the element is created.
     connectedCallback() {
+
+        if (gettestdata.islocal()) {
+            console.log('Islocal');
+            $("#githubdiv").css({"visibility" : "visible"});
+        }  else {
+            $("#usegithublab").text('');
+        }
+        
         let numviewers = parseInt(this.getAttribute('bis-numviewers') || 1);
 
         globalParams.tabset = this.getAttribute('bis-tabset') || null;
@@ -276,22 +329,23 @@ class DisplayRegressionElement extends HTMLElement {
             globalParams.viewerid.push(this.getAttribute('bis-viewerid'+i));
             globalParams.tabid.push(this.getAttribute('bis-tab'+i));
         }
-        
-        globalParams.testDataRootDirectory="images/testdata";
 
+        
         let name=this.getAttribute('bis-testlist') || 'overlay';
         displaytestlist=testmodule[name];
 
-
+        let isconnviewer=false;
         
         webutil.runAfterAllLoaded( () => {
 
-
+            console.log('Name = ',name);
             
-            if (name==="overlay")
+            if (name==="overlay") {
                 webutil.setAlertTop(920);
-            else
+            } else {
                 webutil.setAlertTop(870);
+                isconnviewer=true;
+            }
             
             globalParams.application = document.querySelector(this.getAttribute("bis-application"));
             globalParams.resdiv=$('#displayresults');
@@ -302,12 +356,12 @@ class DisplayRegressionElement extends HTMLElement {
 
             $('#compute').click( (e) => {
                 e.preventDefault(); // cancel default behavior
-                runTests(true);
+                runTests(true,isconnviewer);
             });
 
             $('#computesingle').click( (e) => {
                 e.preventDefault(); // cancel default behavior
-                runTests(false);
+                runTests(false,isconnviewer);
             });
 
         });

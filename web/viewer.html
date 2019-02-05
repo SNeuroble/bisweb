@@ -38,9 +38,8 @@
     <!-- external css files -->
     <!-- build:css -->
     <link rel="stylesheet" type="text/css" href="../lib/css/bootstrap_dark.css">
-    <link rel="stylesheet" type="text/css"  href="../lib/css/bootstrap-colorselector.css">
+    <link rel="stylesheet" type="text/css" href="../node_modules/jstree/dist/themes/default/style.css">
     <link rel="stylesheet" type="text/css" href="biscommon.css">
-    <link rel="stylesheet" href="../node_modules/jstree/dist/themes/default/style.css">
     <!-- endbuild -->
 
     <!-- all javascript files -->
@@ -48,6 +47,7 @@
     <script src="bis.js"></script>
     <script src="../build/web/webcomponents-lite.js"></script>
     <script src="../build/web/jquery.min.js"></script>
+    <script src="../build/web/three.min.js"></script>
     <script src="../build/web/bootstrap.min.js"></script>
     <script src="../build/web/libbiswasm_wasm.js"></script>
     <script src="../build/web/bislib.js"></script>
@@ -64,21 +64,23 @@
 
   <bisweb-topmenubar   id="viewer_menubar"></bisweb-topmenubar> 
 
-  <div id="viewerwidget">
+  <div class="bisviewerwidget">
     <bisweb-viewerlayoutelement
       id="viewer_layout"
       bis-dockwidth="300"
       bis-coreopen="true"
       bis-fixed="1"
+      bis-webgl="2"
       bis-defaulttext="">
     </bisweb-viewerlayoutelement>
     
     <bisweb-colormapcontrollerelement id="viewer_cmap"></bisweb-colormapcontrollerelement>
     
     <bisweb-orthogonalviewer
-       id="viewer"
-       bis-layoutwidgetid="#viewer_layout"
-       bis-colormapeditorid="#viewer_cmap">
+      id="viewer"
+      bis-volumerendering='1'
+      bis-layoutwidgetid="#viewer_layout"
+      bis-colormapeditorid="#viewer_cmap">
     </bisweb-orthogonalviewer>
     
 
@@ -108,13 +110,29 @@
       bis-algorithmcontrollerid="#algoelement">
     </bisweb-modulemanager>
 
-    <bisweb-viewerapplication
-       id="viewer_application"
-       bis-menubarid="#viewer_menubar"
-       bis-modulemanagerid="#modulemanager"
-       bis-viewerid="#viewer">
-    </bisweb-viewerapplication>
     
+    <bisweb-filetreepanel
+      id="bis_filetreepanel"
+      bis-layoutwidgetid="#viewer_layout" 
+      bis-viewerid="#viewer"
+      bis-viewerapplicationid="#viewer_application">
+    </bisweb-filetreepanel>
+
+    <bisweb-dicomimportelement
+      id="dicom_import"
+      bis-viewerid="#viewer"
+      bis-layoutwidgetid="#viewer_layout"
+      bis-filetreepanelid="#bis_filetreepanel">
+    </bisweb-dicomimportelement>
+
+    <bisweb-viewerapplication
+      id="viewer_application"
+      bis-menubarid="#viewer_menubar"
+      bis-modulemanagerid="#modulemanager"
+      bis-dicomimportid="#dicom_import"
+      bis-viewerid="#viewer">
+    </bisweb-viewerapplication>
+
   </div>
 
   

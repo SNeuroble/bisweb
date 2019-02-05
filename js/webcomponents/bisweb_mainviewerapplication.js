@@ -22,6 +22,7 @@
 const bisweb_apputil = require("bisweb_apputilities.js");
 const BisWebImage = require('bisweb_image');
 const webutil = require('bis_webutil');
+const webcss = require('bisweb_css');
 const webfileutil = require('bis_webfileutil');
 const FastClick = require('fastclick');
 const userPreferences = require('bisweb_userpreferences.js');
@@ -32,8 +33,7 @@ const bootbox=require('bootbox');
 const BisWebPanel = require('bisweb_panel.js');
 const resliceImage = require('resliceImage');
 const BisWebLinearTransformation = require('bisweb_lineartransformation.js');
-//const BisWebHelpVideoPanel = require('bisweb_helpvideopanel');
-
+const idb=require('idb-keyval');
 const localforage=require('localforage');
 
 
@@ -68,12 +68,14 @@ const clipboard=localforage.createInstance({
  *     bis-viewerid2 : the id of the second <bisweb-orthogonalviewer> element (must be for use as slave)
  *     bis-consoleid : the id of an optional <bisweb-console> element.
  *     bis-modulemanagerid : the id of an optional <bisweb-modulemanager> element that manages processing modules
+ *     bis-imagepath : if set the path to the images (used for external applications0
  */
 class ViewerApplicationElement extends HTMLElement {
 
     constructor() {
         super();
         this.extraManualHTML='';
+        this.externalMode=false;
         this.syncmode = false;
         this.simpleFileMenus=false;
         this.VIEWERS=[];
@@ -81,21 +83,24 @@ class ViewerApplicationElement extends HTMLElement {
         this.saveState=null;
         this.applicationURL=webutil.getWebPageURL();
         this.applicationName=webutil.getWebPageName();
+        if (this.applicationName.lastIndexOf("2")===this.applicationName.length-1)
+            this.applicationName=this.applicationName.substr(0,this.applicationName.length-1);
         console.log("+++++ App name=",this.applicationName,this.applicationURL);
-        clipboard.setItem('appname',this.applicationName);
 
+        
         // For dual tab apps
         this.tab1name=null;
         this.tab2name=null;
 
-        if (this.applicationName=="overlayviewer") 
+        if (this.applicationName==="overlayviewer")
             this.extraManualHTML='overlayviewer.html';
         else if (this.applicationName==="editor")
             this.extraManualHTML='imageeditor.html';
-
+        
         this.applicationInitializedPromiseList= [ ];
-        this.applicationInitializedPromiseList.push(userPreferences.initialize(bisdbase)); // this is an async call to initialize. Use safe get later to make sure
 
+        
+        
     }
 
     // ----------------------------------------------------------------------------
@@ -347,7 +352,7 @@ class ViewerApplicationElement extends HTMLElement {
         const img = new BisWebImage();
         return new Promise( (resolve,reject) => {
 
-            webutil.createAlert('Loading image from ' + genericio.getFixedLoadFileName(fname),'progress',30);
+            webutil.createAlert('Loading image from ' + genericio.getFixedLoadFileName(fname),'progress', 30, 0, { 'makeLoadSpinner' : true });
             setTimeout( () => {
                 img.load(fname)
                     .then(function () {
@@ -364,7 +369,7 @@ class ViewerApplicationElement extends HTMLElement {
         const self=this;
         return new Promise( (resolve,reject) => {
             let img = new BisWebImage();
-            webutil.createAlert('Loading image from ' + genericio.getFixedLoadFileName(fname),'progress',30);
+            webutil.createAlert('Loading image from ' + genericio.getFixedLoadFileName(fname),'progress',30, 0, { 'makeLoadSpinner' : true });
             setTimeout( () => {
                 img.load(fname)
                     .then(function () {
@@ -848,20 +853,17 @@ class ViewerApplicationElement extends HTMLElement {
         
         let hmenu = webutil.createTopMenuBarMenu("Help", menubar);
 
-        let fn = (() => { this.welcomeMessage(true) ;});
+        let fn = (() => {
+            this.welcomeMessage(true) ;
+        });
         
         webutil.createMenuItem(hmenu,'About this application',fn);
-        
-/*        let helpdialog = new BisWebHelpVideoPanel();
-        const self=this;
-        webutil.createMenuItem(hmenu, 'About Video',
-                               function () {
-                                   helpdialog.setLayoutController(self.VIEWERS[0].getLayoutController());
-                                   helpdialog.displayVideo();
-                                   });*/
-        hmenu.append($(`<li><a href="https://bioimagesuiteweb.github.io/bisweb-manual/${extrahtml}" target="_blank" rel="noopener" ">BioImage Suite Web Online Manual</a></li>`));
+
+        let link=`a href="https://bioimagesuiteweb.github.io/bisweb-manual/${extrahtml}" target="_blank" rel="noopener"`; 
+        hmenu.append($(`<li><${link}>BioImage Suite Web Online Manual</a></li>`));
+        webutil.createMenuItem(hmenu, 'Toggle Dark/Bright Mode', () => {   this.toggleColorMode();  });
         webutil.createMenuItem(hmenu, ''); // separator
-        
+
         this.addOrientationSelectToMenu(hmenu);
 
         if (webutil.inElectronApp()) {
@@ -879,6 +881,19 @@ class ViewerApplicationElement extends HTMLElement {
         }
 
         webfileutil.createFileSourceSelector(hmenu);
+
+        if (!webutil.inElectronApp()) { 
+            userPreferences.safeGetItem("internal").then( (f) =>  {
+                if (f) {
+                    webutil.createMenuItem(hmenu, ''); // separator
+                    webutil.createMenuItem(hmenu, 'Open AWS Selector', 
+                                           () => {
+                                               webfileutil.createAWSMenu();
+                                           });
+                }
+            }).catch( () => { });
+        }
+
 
 
         return hmenu;
@@ -969,6 +984,8 @@ class ViewerApplicationElement extends HTMLElement {
             webutil.createMenuItem(gmenu, 'Viewer Info', function () { self.VIEWERS[0].viewerInformation(); });
         }
         
+
+        
     }
 
     //  ---------------------------------------------------------------------------
@@ -993,6 +1010,10 @@ class ViewerApplicationElement extends HTMLElement {
                     return;
                 }
 
+                // Account for viewer and viewer2 being the same thing
+                if (obj.app.lastIndexOf("2")===obj.app.length-1)
+                    obj.app=obj.app.substr(0,obj.app.length-1);
+                
                 if (obj.app !== this.applicationName) {
                     clipboard.setItem('lastappstate',obj).then( () => {
 
@@ -1122,32 +1143,66 @@ class ViewerApplicationElement extends HTMLElement {
                                            });
 
 
-
         
-        webutil.createMenuItem(bmenu,'');
-        webutil.createMenuItem(bmenu, 'Restart Application',
-                               function () {
-                                   bootbox.confirm("Are you sure? You will lose all unsaved data.",
-                                                   function(e) {
-                                                       if (e)
-                                                           window.open(self.applicationURL,'_self');
-                                                   }
-                                                  );
-                               });
+        // ----------------------------------------------------------
+        // DICOM
+        // ----------------------------------------------------------
+        userPreferences.safeGetItem("internal").then( (f) =>  {
+            if (f) {
+                const dicomid = this.getAttribute('bis-dicomimportid') || null;
+                if (dicomid) {
+                    let dicommodule = document.querySelector(dicomid) || null;
+                    webutil.createMenuItem(bmenu,'');
+                    webutil.createMenuItem(bmenu, 'Import DICOM', () => {
+                        dicommodule.show();
+                    });
+                }
+            }
+                                                              
+            webutil.createMenuItem(bmenu,'');
+            webutil.createMenuItem(bmenu, 'Restart Application',
+                                   function () {
+                                       bootbox.confirm("Are you sure? You will lose all unsaved data.",
+                                                       function(e) {
+                                                           if (e)
+                                                               window.open(self.applicationURL,'_self');
+                                                       }
+                                                      );
+                                   });
+        });
         return bmenu;
     }
 
     //  ---------------------------------------------------------------------------
     
-    parseQueryParameters() {
+    parseQueryParameters(painttoolid) {
 
         let load=webutil.getQueryParameter('load') || '';
         let imagename=webutil.getQueryParameter('image') || '';
-
+        let imagename2=webutil.getQueryParameter('image2') || '';
+        let overlayname=webutil.getQueryParameter('overlay') || '';
+        let overlayname2=webutil.getQueryParameter('overlay2') || '';
+        
         if (load.length>0) {
             this.loadApplicationState(load);
         } else if (imagename.length>0) {
-            this.loadImage(imagename);
+            this.loadImage(imagename,0).then( () => {
+                if (overlayname.length>0) {
+                    if (painttoolid===null)  {
+                        this.loadOverlay(overlayname,0);
+                    } else {
+                        let painttool = document.querySelector(painttoolid);
+                        painttool.loadobjectmap(overlayname);
+                    }
+                }
+            });
+            if (imagename2.length>0 && this.num_independent_viewers>1) {
+                this.loadImage(imagename2,1).then( () => {
+                    if (overlayname2.length>0) {
+                        this.loadOverlay(overlayname2,1);
+                    }
+                });
+            }
         }
 
         let restore=webutil.getQueryParameter('restorestate');
@@ -1172,20 +1227,90 @@ class ViewerApplicationElement extends HTMLElement {
         }
     }
                                 
+    fixColors() {
+        // This is probably already taken care of
+        // by a viewerlayoutelement but if not ...
+        //console.log("Calling setAutoColorMode");
+        webcss.setAutoColorMode();
+    }
 
+    /** Toggle color mode */
+    toggleColorMode(save=true) {
+
+        webcss.toggleColorMode().then( (m) => {
+            for (let i=0;i<this.VIEWERS.length;i++) {
+                this.VIEWERS[i].handleColorModeChange(m);
+            }
+            if (save)
+                userPreferences.setItem('darkmode', m,true);
+        }).catch( (m) => {
+            console.log("Failed to switch colors, staying with",m);
+        });
+    }
+    
+
+    finalizeConnectedEvent() {
+        //signal other modules waiting for top bar to render
+        let mainViewerDoneEvent = new CustomEvent('mainViewerDone');
+        document.dispatchEvent(mainViewerDoneEvent);
+        
+        let istest = this.getAttribute('bis-testingmode') || false;
+        webutil.runAfterAllLoaded( () => {
+            Promise.all(this.applicationInitializedPromiseList).then( () => {
+                webfileutil.initializeFromUserPrefs();
+                const painttoolid = this.getAttribute('bis-painttoolid') || null;
+                this.parseQueryParameters(painttoolid);
+                this.fixColors();
+                document.body.style.zoom =  1.0;
+
+                if (!istest) {
+                    this.welcomeMessage(false);
+                } else {
+                    webutil.createAlert('In Test Mode',false);
+                }
+
+                userPreferences.safeGetItem('darkmode').then( (m) => {
+                    let s=webcss.isDark();
+                    if (m!==s) 
+                        this.toggleColorMode(false);
+                });
+                
+            }).catch( (e) => {
+                console.log('Error ',e);
+            });
+        });
+    }
+
+    
     // ---------------------------------------------------------------------------
     welcomeMessage(force=false) {
 
+        if (this.externalMode)
+            return;
+        
         let show=force;
 
-        Promise.all( [ 
+        let p=[ 
             userPreferences.safeGetImageOrientationOnLoad(),
             userPreferences.safeGetItem('showwelcome'),
-            webutil.aboutText()
-        ]).then( (lst) => {
+            webutil.aboutText(),
+        ];
+
+        if (!webutil.inElectronApp()) {
+            p.push( idb.get('mode'));
+        }
+
+        Promise.all(p).then( (lst) => {
             let forceorient=lst[0];
             let firsttime=lst[1];
             let msg=lst[2];
+
+            lst[3]=lst[3] || '';
+            
+            let offline=false;
+            // TODO: Check that this works
+            if (lst[3].indexOf('offline')>=0)
+                offline=true;
             
             if (firsttime === undefined)
                 firsttime=true;
@@ -1202,8 +1327,11 @@ class ViewerApplicationElement extends HTMLElement {
             let body=dlg.body;
             
             let txt=msg;
+
+            if (offline)
+                txt+="<HR><p>This application is operating in Offline Mode.</p><HR>";
             
-            console.log('In Electron=',webutil.inElectronApp());
+            //            console.log('In Electron=',webutil.inElectronApp());
             
             if (!webutil.inElectronApp() && firsttime===true) {
                 txt+=`<HR><H3>Some things you should
@@ -1247,12 +1375,55 @@ class ViewerApplicationElement extends HTMLElement {
         });
     }
 
+
+    /** Fix touch events and prevent multitouch zoom of the whole UI */
+    
+    fixMobileMouseHandling() {
+        new FastClick(document.body);
+        window.addEventListener("touchstart", 
+                                (event) => {
+                                    if(event.touches.length > 1) {
+                                        //the event is multi-touch
+                                        //you can then prevent the behavior
+                                        event.preventDefault();
+                                    }
+                                },{ passive : false});
+    }
     
     //  ---------------------------------------------------------------------------
     // Essentially the main function, called when element is attached to the page
     //  ---------------------------------------------------------------------------
+    setExternalAndImagePath() {
+
+        const imagepath = this.getAttribute('bis-imagepath') || null;
+        if (imagepath)
+            webutil.setWebPageImagePath(imagepath);
+        
+        let ext=this.getAttribute('bis-external');
+        if (ext) {
+            this.externalMode=true;
+            let a='';
+            if (imagepath)
+                a='using image path=' + imagepath;
+            console.log("BioImage Suite Web Application Element running in External Mode=",this.externalMode,a);
+        }
+
+        if (!this.externalMode) {
+            let p=userPreferences.initialize(bisdbase);
+            p.catch( (e) => {
+                console.log('No dbase available',e);
+            });
+            this.applicationInitializedPromiseList.push(p); // this is an async call to initialize. Use safe get later to make sure
+        }
+
+
+    }
+    
     connectedCallback() {
 
+        // Check if we are in external mode and if we have an imagepath
+        this.setExternalAndImagePath();
+        
         // -----------------------------------------------------------------------
         // Find other items
         // -----------------------------------------------------------------------
@@ -1370,54 +1541,41 @@ class ViewerApplicationElement extends HTMLElement {
         // ----------------------------------------------------------
         this.attachDragAndDrop();
 
+        
         // ----------------------------------------------------------
-        // Console
+        // Help Menu
         // ----------------------------------------------------------
-        let hmenu=this.createHelpMenu(menubar);
-
-
-        // ----------------------------------------------------------------
-        // Add help sample data option
-        // ----------------------------------------------------------------
-        if (this.applicationName==='overlayviewer') {
-            webutil.createMenuItem(hmenu, ''); // separator
-            webutil.createMenuItem(hmenu, 'Load Sample Data',
-                                   function () {
-                                       let imagepath=webutil.getWebPageImagePath();
-                                       let f=`${imagepath}/viewer.biswebstate`;
-                                       self.loadApplicationState(f);
-                                   });
+        if (!this.externalMode) {
+            let hmenu=this.createHelpMenu(menubar);
+            
+            
+            // ----------------------------------------------------------------
+            // Add help sample data option
+            // ----------------------------------------------------------------
+            if (this.applicationName==='overlayviewer') {
+                webutil.createMenuItem(hmenu, ''); // separator
+                webutil.createMenuItem(hmenu, 'Load Sample Data',
+                                       function () {
+                                           let imagepath=webutil.getWebPageImagePath();
+                                           let f=`${imagepath}/viewer.biswebstate`;
+                                           self.loadApplicationState(f);
+                                       });
+            }
         }
-
 
         // ----------------------------------------------------------
         // Mouse Issues on mobile and final cleanup
         // ----------------------------------------------------------
-        new FastClick(document.body);
+        this.fixMobileMouseHandling();
+                                    
         
         if (this.num_independent_viewers > 1)
             self.VIEWERS[1].setDualViewerMode(0.5);
 
-        //signal other modules waiting for top bar to render
-        let mainViewerDoneEvent = new CustomEvent('mainViewerDone');
-        document.dispatchEvent(mainViewerDoneEvent);
-
-        let istest = this.getAttribute('bis-testingmode') || false;
-        webutil.runAfterAllLoaded( () => {
-            Promise.all(this.applicationInitializedPromiseList).then( () => {
-                this.parseQueryParameters();
-                document.body.style.zoom =  1.0;
-                if (!istest) {
-                    this.welcomeMessage(false);
-                } else {
-                    webutil.createAlert('In Test Mode',false);
-                }
-            });
-        });
-
+        // Clean up at the end
+        this.finalizeConnectedEvent();
     }
 }
-
 
 module.exports = ViewerApplicationElement;
 webutil.defineElement('bisweb-viewerapplication', ViewerApplicationElement);

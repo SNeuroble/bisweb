@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /*  LICENSE
     
     _This file is Copyright 2018 by the Image Processing and Analysis Group (BioImage Suite Team). Dept. of Radiology & Biomedical Imaging, Yale School of Medicine._
@@ -15,14 +17,17 @@
     
     ENDLICENSE */
 
+
 'use strict';
 
 /**
  * This is the main command line tool for all modules. Uses functionality in commandline.
  */
 
-require('../../config/bisweb_pathconfig.js');
-const commandline = require('commandline');
+console.log('++++++++++++++++++++++++++++++++++++++++++++++++');
+
+global.bioimagesuiteweblib=false;
+let bisweb=require('./bioimagesuiteweblib');
 
 let args=[];
 for (let i=0;i<process.argv.length;i++) {
@@ -34,9 +39,20 @@ for (let i=0;i<process.argv.length;i++) {
 
 let toolname=process.argv[2] || '';
 
-commandline.loadParse(args, toolname).then( () => {
-    process.exit(0);
-}).catch((e) => { 
+
+
+bisweb.loadUserPreferences().then( () => {
+    console.log('++++++++++++++++++++++++++++++++++++++++++++++++');
+    console.log('++++ Executing module '+toolname);
+    console.log('++++++++++++++++++++++++++++++++++++++++++++++++');
+    bisweb.loadParse(args, toolname).then( () => {
+        console.log('++++++++++++++++++++++++++++++++++++++++++++++++');
+        process.exit(0);
+    }).catch((e) => { 
+        console.log(e); 
+        process.exit(1);
+    });
+}).catch( (e) => {
     console.log(e); 
     process.exit(1);
 });

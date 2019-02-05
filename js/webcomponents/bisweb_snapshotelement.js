@@ -34,9 +34,7 @@ const bootbox = require('bootbox');
 const userPreferences = require('bisweb_userpreferences.js');
 const BisWebPanel = require('bisweb_panel.js');
 const BisWebImage = require('bisweb_image.js');
-
-require('bootstrap-colorselector.js');
-
+const pngReader=require('pngreader_bundle.js');
 
 /**
  * A class to create snapshots from a viewer.
@@ -68,6 +66,8 @@ class SnapshotElement extends HTMLElement {
 
         this.testingResolve=null;
         this.testingReject=null;
+        this.simplemode=false;
+        this.colorselector=null;
     }
 
 
@@ -86,7 +86,9 @@ class SnapshotElement extends HTMLElement {
                 this.data[key]= dt[key];
         }
 
-        this.colorselector.prop("checked", this.data.dowhite);
+        if (this.colorselector) {
+            this.colorselector.prop("checked", this.data.dowhite);
+        }
         this.cropselector.prop("checked", this.data.crop);
         this.select.val(this.data.scale - 1);
     }
@@ -205,7 +207,7 @@ class SnapshotElement extends HTMLElement {
         };
     }
 
-    autoCrop(in_canvas, dowhite, ismosaic) {
+    autoCrop(in_canvas, dowhite, hasOverlayColorbar) {
 
         let wd = in_canvas.width;
         let ht = in_canvas.height;
@@ -219,14 +221,14 @@ class SnapshotElement extends HTMLElement {
         let { goodrows, rows } = this.computeGoodRows(in_imgdata, dowhite, border, padding);
 
         let beginj = 0, endj = ht;
-        if (ismosaic)
+        if (hasOverlayColorbar)
             endj = Math.round(0.91 * ht);
 
         let tailgoodcolumns = -1, tailcolumns = null;
 
         let { goodcolumns, columns } = this.computeGoodColumns(in_imgdata, dowhite, beginj, endj, border, padding);
 
-        if (ismosaic) {
+        if (hasOverlayColorbar) {
             let d = this.computeGoodColumns(in_imgdata, dowhite, endj, ht, border, border);
             tailgoodcolumns = d.goodcolumns;
             tailcolumns = d.columns;
@@ -240,7 +242,7 @@ class SnapshotElement extends HTMLElement {
             goodcolumns = tailgoodcolumns;
         }
 
-        if (ismosaic && tailgoodcolumns > 0)
+        if (hasOverlayColorbar && tailgoodcolumns > 0)
             goodrows = Math.floor(goodrows + border);
 
         let newcanvas = document.createElement("canvas");
@@ -273,7 +275,7 @@ class SnapshotElement extends HTMLElement {
                 }
             }
         }
-        if (ismosaic && tailgoodcolumns > 0) {
+        if (hasOverlayColorbar && tailgoodcolumns > 0) {
             let widthoffset = Math.floor((goodcolumns - tailgoodcolumns) / 2);
             for (let j = endj; j < ht; j++) {
                 if (rows[j] >= 0) {
@@ -294,7 +296,7 @@ class SnapshotElement extends HTMLElement {
     }
 
 
-    createOutputCanvas(img,ismosaic=false,scale=1.0,dowhite=false,crop=false) {
+    createOutputCanvas(img,hasOverlayColorbar=false,scale=1.0,dowhite=false,crop=false) {
 
         let fillcolor = "#000000";
         if (dowhite)
@@ -314,20 +316,21 @@ class SnapshotElement extends HTMLElement {
         ctx.drawImage(img, 0, 0, outcanvas.width, outcanvas.height);
 
         if (crop) {
-            outcanvas = this.autoCrop(outcanvas, dowhite, ismosaic);
+            outcanvas = this.autoCrop(outcanvas, dowhite, hasOverlayColorbar);
         }
 
         return outcanvas;
     }
     
-    createsnapshot(img, ismosaic = false) {
+    createsnapshot(img, hasOverlayColorbar = false) {
 
         // Store scale
         userPreferences.setItem('snapshotscale', this.data.scale);
-        userPreferences.setItem('snapshotdowhite', this.data.dowhite);
+        if (!this.simplemode)
+            userPreferences.setItem('snapshotdowhite', this.data.dowhite);
         userPreferences.storeUserPreferences();
 
-        let outcanvas=this.createOutputCanvas(img,ismosaic,this.data.scale,this.data.dowhite,this.data.crop);
+        let outcanvas=this.createOutputCanvas(img,hasOverlayColorbar,this.data.scale,this.data.dowhite,this.data.crop);
         let outimg=outcanvas.toDataURL("image/png");
         
         let dispimg = $('<img id="dynamic">');
@@ -385,7 +388,7 @@ class SnapshotElement extends HTMLElement {
 
     connectedCallback() {
 
-        
+
         if (this.getAttribute('bis-dowhite') === 'true')
             this.data.dowhite = true;
 
@@ -394,6 +397,13 @@ class SnapshotElement extends HTMLElement {
         let viewer = document.querySelector(viewerid);
         let layoutcontroller = document.querySelector(layoutid);
 
+        let simple=viewer.getAttribute('bis-simplemode');
+        if (simple==="1" || simple==="true") {
+            this.simplemode=true;
+            this.data.dowhite=true;
+        } 
+            
+        
         this.viewer = viewer;
         this.viewer.setSnapShotController(this);
         this.renderer = layoutcontroller.renderer;
@@ -401,7 +411,6 @@ class SnapshotElement extends HTMLElement {
                            layoutcontroller.overlaycanvas];
 
         this.select = null;
-        this.colorselector = null;
 
         const self = this;
 
@@ -410,7 +419,7 @@ class SnapshotElement extends HTMLElement {
                                       'name' : 'Viewer Snapshot',
                                       'dual' : false,
                                       'permanent' : true,
-                                      'width' : '300px'
+                                      'width' : '300px',
                                   });
         panel.show();
 
@@ -423,20 +432,9 @@ class SnapshotElement extends HTMLElement {
         let elem1 = webutil.creatediv({ parent: inlineform });
         let elem2 = webutil.creatediv({ parent: inlineform });
 
-        let bg = webutil.getpassivecolor();
-        try {
-            bg = basegui.parent().parent().css('background-color');
-        } catch (e) {
-            console.log('bad color sticking to defaults', e);
-        }
-
-        webutil.createlabel({
-            name: "Scale:",
-            type: "default",
-            css: { 'margin-left': '2px', 'background-color': bg },
-            parent: elem1
-        });
-
+        let c=$('<span>Scale:</span>');
+        elem1.append(c);
+        c.css({ 'margin-left': '2px', 'margin-right' : '5px', 'font-size': '11px'});
 
         self.select = webutil.createselect({
             parent: elem1,
@@ -449,20 +447,22 @@ class SnapshotElement extends HTMLElement {
         });
 
 
-        self.colorselector =
-            webutil.createcheckbox({
-                name: 'White Bkgd',
-                type: "info",
-                checked: self.data.dowhite,
-                parent: elem1,
-                callback: function (sel) {
-                    self.data.dowhite = sel;
-                },
-                css: { 'margin-left': '5px' },
-                tooltip: "If on set the viewer background to white",
-            });
-
-
+        if (!this.simplemode) {
+        
+            self.colorselector =
+                webutil.createcheckbox({
+                    name: 'White Bkgd',
+                    type: "info",
+                    checked: self.data.dowhite,
+                    parent: elem1,
+                    callback: function (sel) {
+                        self.data.dowhite = sel;
+                    },
+                    css: { 'margin-left': '5px' },
+                    tooltip: "If on set the viewer background to white",
+                });
+            
+        }
         self.cropselector =
             webutil.createcheckbox({
                 name: 'Crop',
@@ -475,7 +475,7 @@ class SnapshotElement extends HTMLElement {
                 css: { 'margin-left': '5px' },
                 tooltip: "Crop Snapshot",
             });
-
+        
 
         let upd = function () { self.requestupdate(); };
 
@@ -494,6 +494,8 @@ class SnapshotElement extends HTMLElement {
         });
         webutil.tooltip(inlineform);
 
+        
+
         userPreferences.safeGetItem('snapshotscale').then( (v) => {
             if (v !== null) {
                 let v2 = parseFloat(v);
@@ -505,18 +507,20 @@ class SnapshotElement extends HTMLElement {
             }
         });
 
-        userPreferences.safeGetItem('snapshotdowhite').then( (v) => {
-            self.data.dowhite=v;
-            if (self.colorselector !== null)
-                self.colorselector.prop("checked", self.data.dowhite);
-        });
+        if (!this.simplemode) {
+            userPreferences.safeGetItem('snapshotdowhite').then( (v) => {
+                self.data.dowhite=v;
+                if (self.colorselector !== null)
+                    self.colorselector.prop("checked", self.data.dowhite);
+            });
+        }
     }
 
     /** function that receives update from viewer once snapshot is requested
      * @param {DataURL} t - dataurl storage of 3d renderer buffer (             let t=renderer.domElement.toDataURL())
-     * @param{Boolean} ismosaic -- is the viewer a mosaic viewer (run auto crop);
+     * @param{Boolean} hasOverlayColorbar -- is the viewer a mosaic viewer (run auto crop);
      */
-    update(t, ismosaic = false) {
+    update(t, hasOverlayColorbar = false) {
 
         let img = document.createElement('img');
         img.src = t;
@@ -524,9 +528,9 @@ class SnapshotElement extends HTMLElement {
         setTimeout( () => {
             
             if (this.testingResolve===null) {
-                this.createsnapshot(img, ismosaic);
+                this.createsnapshot(img, hasOverlayColorbar);
             } else {
-                this.testingResolve(this.createOutputCanvas(img,ismosaic,this.data.scale,this.data.dowhite,this.data.crop));
+                this.testingResolve(this.createOutputCanvas(img,hasOverlayColorbar,this.data.scale,this.data.dowhite,this.data.crop));
             }
         }, 500);
     }
@@ -576,27 +580,47 @@ class SnapshotElement extends HTMLElement {
       * @param{URL} url - the url storing the image (e.g. .png)
       * @return{BisWebImage} - the output image
       */
-    createBisWebImageFromImageElement(url) {
+    createBisWebImageFromURL(url) {
 
         return new Promise( (resolve,reject) => { 
 
-            let image_element=new Image();
-            
-            let createimage=( () => {
+            bisgenericio.read(url,true).then( (obj) => {
                 
-                let canvas = document.createElement("canvas");
-                canvas.height=image_element.height;
-                canvas.width=image_element.width;
-                canvas.getContext("2d").drawImage(image_element,0,0);
-                resolve( this.createBisWebImageFromCanvas(canvas));
-            });
+                let data=obj.data;
+                let reader = new pngReader(data.buffer);
+                reader.parse(function(err, png){
+                    if (err)
+                        reject(err);
+                    
+                    let ht=png.getHeight();
+                    let wd=png.getWidth();
 
-            
-            image_element.src=url;
-            image_element.addEventListener('load',createimage);
-            image_element.addEventListener('onerror',reject);
+                    
+                    let output=new BisWebImage();
+                    output.initialize();
+                    output.createImage( {
+                        type : "uchar",
+                        numcomponents : 1,
+                        numframes : 4,
+                        orientation : 'LPS',
+                        dimensions : [ wd,ht,1 ],
+                    });
+                    
+                    let out_imgdata=output.getImageData();
+                    let slicesize=wd*ht;
+                    let index=0;
+                    for (let row=0;row<ht;row++) {
+                        for (let col=0;col<wd;col++) {
+                            for (let comp=0;comp<=3;comp++) {
+                                out_imgdata[comp*slicesize+row*wd+col]=png.pixels[index];
+                                ++index;
+                            }
+                        }
+                    }
+                    resolve(output);
+                });
+            }).catch( (e) => { reject(e); });
         });
-
     }
     
     
@@ -620,4 +644,5 @@ class SnapshotElement extends HTMLElement {
     
 }
 
+module.exports=SnapshotElement;
 webutil.defineElement('bisweb-snapshotelement', SnapshotElement);

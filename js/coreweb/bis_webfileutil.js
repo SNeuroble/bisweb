@@ -30,19 +30,22 @@ const bisweb_dropbox=require('bisweb_simpledropbox');
 const bisweb_onedrive=require('bisweb_simpleonedrive');
 const bisweb_googledrive=require('bisweb_drivemodule');
 const amazonaws=require('bisweb_awsmodule.js');
-const bisweb_awsmodule = new amazonaws();
+let bisweb_awsmodule = null;// new amazonaws();
 
 
 const genericio=require('bis_genericio');
 const userPreferences = require('bisweb_userpreferences.js');
-const bisdbase = require('bisweb_dbase');
+//const bisdbase = require('bisweb_dbase');
 const keystore=require('bis_keystore');
 const dkey=keystore.DropboxAppKey || "";
 const gkey=keystore.GoogleDriveKey || "";
 const mkey=keystore.OneDriveKey || "";
 
+
 // Ensure that these get initialized
-userPreferences.initialize(bisdbase);
+//userPreferences.initialize(bisdbase).catch( () => {
+//    console.log('--- No preference database available');
+//});
 
 
 // ------------------------
@@ -66,7 +69,7 @@ if (!webutil.inElectronApp() && enableserver===true) {
 // Initial mode
 let fileMode='local';
 let fileInputElements= [];
-
+let iosFileDialog=null;
 
 
 
@@ -264,9 +267,6 @@ const webfileutils = {
         }
     },
 
-
-
-
     /** 
      * Web file callback function. This function will be invoked by any buttons that load or save if the application has been launched from a browser. 
      * This function will call the load and save functions of whichever file source is specified (see setFileSource or another similar function). 
@@ -289,7 +289,6 @@ const webfileutils = {
         let title = fileopts.title || '';
         let defaultpath=fileopts.defaultpath || '';
 
-        
         if (fileopts.suffix===null && fileopts.filters!==null) {
             if (fileopts.filters==="DIRECTORY" || fileopts.filters==="NII" ) {
                 suffix=fileopts.filters;
@@ -330,6 +329,11 @@ const webfileutils = {
             cbopts.initialFilename= '';
             cbopts.mode='directory';
             cbopts.suffix='';
+
+            if (fmode !== 'server' && fmode !== 'amazonaws') {
+                webutil.createAlert('You need to connect to a local fileserver on an S3 share before this operation.',true);
+                return false;
+            }
         }
 
         // -------------------- End of Part IA -------------
@@ -337,7 +341,7 @@ const webfileutils = {
         if (fileopts.save) {
             // We are now saving only server, aws or local
             
-            if (fileMode === 'server' || fileMode === 'amazonaws') {
+            if (fmode === 'server' || fmode === 'amazonaws') {
 
                 let initialDir=null;
                 let initialFilename=null;
@@ -369,7 +373,7 @@ const webfileutils = {
                 
                 cbopts.initialFilename=initialFilename || '';
                 cbopts.mode='save';
-                if (fileMode === 'server') 
+                if (fmode === 'server') 
                     bisweb_fileserverclient.requestFileList(initialDir, true, cbopts);
                 else
                     bisweb_awsmodule.wrapInAuth('uploadfile', cbopts);
@@ -410,29 +414,54 @@ const webfileutils = {
             return;
         }
 
-        if (fileMode==="amazonaws") {
+        if (fmode==="amazonaws") {
             bisweb_awsmodule.wrapInAuth('showfiles', cbopts);
             return;
         }
 
-        if (fileMode==="server") {
+        if (fmode==="server") {
             bisweb_fileserverclient.requestFileList(null,true,cbopts);
             return;
         }
 
 
         let nid=webutil.getuniqueid();
-
-        let loadelement = $(`<input type="file" style="visibility: hidden;" id="${nid}" accept="${suffix}"/>`);
         for (let i=0;i<fileInputElements.length;i++)
             fileInputElements[i].remove();
-        fileInputElements.push(loadelement);
+
         
-        loadelement[0].addEventListener('change', function (f) {
-            callback(f.target.files[0]);
-        });
-        $('body').append(loadelement);
-        loadelement[0].click();
+        
+        if (!genericio.inIOS()) {
+            let loadelement = $(`<input type="file" style="visibility: hidden;" id="${nid}" accept="${suffix}"/>`);
+            fileInputElements.push(loadelement);
+
+            loadelement[0].addEventListener('change', function (f) {
+                callback(f.target.files[0]);
+            });
+            $('body').append(loadelement);
+            loadelement[0].click();
+        } else {
+            if (!iosFileDialog) 
+                iosFileDialog=webutil.createmodal('Select Input File');
+            
+            iosFileDialog.titlediv.empty();
+            if (fileopts.title.length<1)
+                fileopts.title='Select File';
+            iosFileDialog.titlediv.append(`<H4>${fileopts.title}</H4>`);
+            let loadelement = $(`<input type="file" id="${nid}" accept="${suffix}"/>`);
+            fileInputElements.push(loadelement);
+            loadelement[0].addEventListener('change', function (f) {
+                iosFileDialog.dialog.modal('hide');
+                setTimeout( () => {
+                    callback(f.target.files[0]);
+                },50);
+                return false;
+            });
+            iosFileDialog.body.append(loadelement);
+            iosFileDialog.dialog.modal('show');
+            iosFileDialog.body[0].click();
+        }
+            
     },
 
     /** 
@@ -444,6 +473,7 @@ const webfileutils = {
      * @param {string}  fileopts.defaultpath -  use this as original filename
      * @param {string}  fileopts.filter - use this as filter (if in electron)
      * @param {string}  fileopts.suffix - List of file types to accept as a comma-separated string e.g. ".ljson,.land" (simplified version filter)
+     * @param {string}  fileopts.force - If defined this load will force the load to use a given file source.
      * @param {Function} callback -- functiont to call when done
 
      */
@@ -547,13 +577,17 @@ const webfileutils = {
      * @alias WebFileUtil.createMenuItem
      * @returns {JQueryElement} - The element created by the function.
      */
-    createFileMenuItem: function (parent, name="", callback=null, fileopts={},css='') {
+    createFileMenuItem: function (parent, name="", callback=null, fileopts={},css='',classname='') {
 
         let style='';
         if (css.length>1)
             style=` style="${css}"`;
-        
-        let menuitem = $(`<li><a href="#" ${style}>${name}</a></li>`);
+
+        let menuitem = $(`<li></li>`);
+        let linkitem=$(`<a href="#" ${style}>${name}</a></li>`);
+        if (classname.length>0)
+            linkitem.addClass(classname);
+        menuitem.append(linkitem);
         parent.append(menuitem);
         webutil.disableDrag(menuitem,true);
         this.attachFileCallback(menuitem,callback,fileopts);
@@ -565,10 +599,12 @@ const webfileutils = {
      * Creates a file menu item with standard BioImageSuite styling. 
      * See parameters for createFileMenuItem.
      */
-    createDropdownFileItem : function (dropdown,name,callback,fileopts) {
+    createDropdownFileItem : function (dropdown,name,callback,fileopts,classname='') {
+        /*return this.createFileMenuItem(dropdown,name,callback,fileopts,
+-                                       "background-color: #303030; color: #ffffff; font-size:13px; margin-bottom: 2px");*/
 
-        return this.createFileMenuItem(dropdown,name,callback,fileopts,
-                                       "background-color: #303030; color: #ffffff; font-size:13px; margin-bottom: 2px");
+        classname= classname || 'biswebdropdownitem';
+        return this.createFileMenuItem(dropdown,name,callback,fileopts,'',classname);
     },
 
     /**
@@ -587,8 +623,8 @@ const webfileutils = {
                 let extra="";
                 if (enableserver) {
                    extra=`
-                        <HR><p>You may download the bisweb fileserver <a href="server.zip" target="_blank" rel="noopener">from this link</a>. 
-                        Use with care. This requires <a href="https://nodejs.org/en/download/" target="_blank" rel="noopener">node.js vs 8.x</a>
+                        <HR><p>You may download the bisweb fileserver using npm. Type <B>npm install biswebnode</B>. Once this is installed look into the <B>biswebnode/serverconfig</B> directory for instructions.
+                        Use with care. This requires <a href="https://nodejs.org/en/download/" target="_blank" rel="noopener">node.js vs 10.x</a>
                         </p>`;
                 }
                 
@@ -596,8 +632,7 @@ const webfileutils = {
                                                       "Close",
                                                       initial,
                                                       self.getModeList(),
-                                                      extra,
-                                                     ).then( (m) => {
+                                                      extra).then( (m) => {
                                                          self.setMode(m);
                                                      }).catch(() => {
                                                          
@@ -615,21 +650,36 @@ const webfileutils = {
         }
     },
 
+    createAWSMenu : function() {
+        if (enableaws) {
+            if  (bisweb_awsmodule===null) {
+                bisweb_awsmodule = new amazonaws();
+            }
+            bisweb_awsmodule.createAWSBucketMenu();
+        }
+    },
+
+    initializeFromUserPrefs : function () {
+        if (!webutil.inElectronApp() ) {
+            
+            Promise.all( [ userPreferences.safeGetItem('filesource'),
+                           userPreferences.safeGetItem('enables3') ]).then( (lst) => {
+                               let f=lst[0];
+                               enableaws=lst[1] || false;
+                               f= f || fileMode;
+                               console.log('+++++ Initial File Source=',f, 's3enabeled=',enableaws);
+                               if (enableaws && bisweb_awsmodule===null) {
+                                   bisweb_awsmodule = new amazonaws();
+                               }
+                               this.setMode(f,false);
+                           }).catch( () => {
+                               this.setMode('local',false);
+                           });
+        } else {
+            this.setMode('local',true);
+        }
+    }
 };
-
-if (!webutil.inElectronApp() ) {
-
-    Promise.all( [ userPreferences.safeGetItem('filesource'),
-                   userPreferences.safeGetItem('enables3') ]).then( (lst) => {
-                       let f=lst[0];
-                       enableaws=lst[1] || false;
-                       f= f || fileMode;
-                       console.log('+++++ Initial File Source=',f, 's3enabeled=',enableaws);
-                       webfileutils.setMode(f,false);
-                   });
-} else {
-    webfileutils.setMode('local',true);
-}
 
 module.exports=webfileutils;
 

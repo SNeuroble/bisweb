@@ -16,7 +16,7 @@
  ENDLICENSE */
 
 "use strict";
-const genericio = require('bis_genericio');
+const externals=require('bis_externals');
 
 /**
  * biswebUserPreferences namespace. Utility code to read/write user preferences
@@ -28,7 +28,7 @@ const genericio = require('bis_genericio');
  * @alias biswebUserPreferences.dbasepointer
  */
 let dbasepointer=null;
-let count=0;
+let count=1;
 /** 
  * The internal user preferences Object
  * @alias biswebUserPreferences.userPreferences
@@ -42,12 +42,22 @@ const userPreferences = {
     showwelcome : true,
     favoriteFolders : [],
     internal : false,
+    darkmode : true,
     enables3 : false,
 };
 
+// Initialization Promise
 const expobj = {
-    loadedPromise : null
+
+    resolve : null,
+    reject : null,
+    initialized : false
 };
+
+expobj.loadedPromise=new Promise( (resolve,reject) => {
+    expobj.resolve=resolve;
+    expobj.reject=reject;
+});
 
 
 // ------------------------------------------------------------------------------------------
@@ -59,12 +69,12 @@ const expobj = {
  */
 let getDefaultFileName=function() {
     
-    if (genericio.getmode() === 'browser') 
+    if (externals['environment'] === 'browser') 
         return null;
 
     
-    const os = genericio.getosmodule();
-    const path = genericio.getpathmodule();
+    const os = externals['os'];
+    const path = externals['path'];
     let homedir=os.homedir();
     return path.join(homedir,'.bisweb');
 };
@@ -79,7 +89,7 @@ let getDefaultFileName=function() {
 let parseUserPreferences=function(obj) {
 
     Object.keys(obj).forEach((key) => {
-        if (obj[key]!== undefined)
+        if (obj[key]!== undefined && obj[key]!==null)
             userPreferences[key]=obj[key];
     });
 
@@ -93,6 +103,9 @@ let parseUserPreferences=function(obj) {
 
     if (userPreferences['showwelcome']!==false)
         userPreferences['showwelcome']=true;
+
+    if (externals['environment'] === 'browser')
+        console.log('---- Loaded userPreferences');//,JSON.stringify(userPreferences));
     
     return true;
 };
@@ -105,14 +118,14 @@ let parseUserPreferences=function(obj) {
  */
 let nodeLoadUserPreferences=function(fname=null) {
 
-    if (genericio.getmode() === 'browser')  {
+    if (externals['environment'] === 'browser')  {
         return null;
     }
 
     if (fname===null)
         fname=getDefaultFileName();
     
-    const fs = genericio.getfsmodule();
+    const fs = externals['fs'];
     let d1 = "";
     try {
         d1=fs.readFileSync(fname, 'utf-8');
@@ -149,24 +162,25 @@ let nodeLoadUserPreferences=function(fname=null) {
 
 let webLoadUserPreferences=function(dbase=null) {
 
-
-    if (genericio.getenvironment()==='electron') {
-        if (nodeLoadUserPreferences(null))
-            return Promise.resolve();
-        return Promise.reject();
-    }
-
     dbase = dbase  || dbasepointer;
     let keys=Object.keys(userPreferences);
-
+    
     return new Promise( (resolve,reject) => {
-        dbase.getItems(keys).then( (obj) => {
-            if (parseUserPreferences(obj)) {
-                dbasepointer=dbase;
-                resolve();
-            }
-        }).catch( (e) => { reject(e); });
-    });
+        try {
+            dbase.getItems(keys).then( (obj) => {
+                if (parseUserPreferences(obj)) {
+                    dbasepointer=dbase;
+                    resolve();
+                }
+            }).catch( (e) => {
+                console.log('Error=',e);
+                reject(e);
+            });
+        } catch(e) {
+            console.log('Error=',e);
+            reject(e);
+        }
+    });              
 };
 
 // Internal Functions
@@ -252,7 +266,7 @@ expobj.saveUserPreferences=function(fname=null) {
     userPreferences['bisformat']="BisWebUserPreferences";
     let opt=JSON.stringify(userPreferences,null,2);
     delete userPreferences.bisformat;
-    const fs = genericio.getfsmodule();
+    const fs = externals['fs'];
 
     try {
         console.log('Saving user preferences in ',fname);
@@ -275,8 +289,7 @@ expobj.printUserPreferences=function() {
  */
 
 expobj.storeUserPreferences=function(dbase) {
-
-    if (genericio.getenvironment()!=='browser') {
+    if (externals['environment']!=='browser') {
         if (expobj.saveUserPreferences())
             return Promise.resolve();
         return Promise.reject();
@@ -284,12 +297,15 @@ expobj.storeUserPreferences=function(dbase) {
 
     dbase = dbase  || dbasepointer;
     return new Promise( (resolve,reject) => {
-        console.log('Storing',JSON.stringify(userPreferences,null,2));
-        
-        dbase.setItems(userPreferences).then( () => {
-            resolve();
-        }).catch( (e) => { reject(e);});
+        try {
+            dbase.setItems(userPreferences).then( () => {
+                resolve();
+            }).catch( (e) => { reject(e);});
+        } catch(e) {
+            reject(e);
+        }
     });
+                      
 };
 
 /** 
@@ -313,11 +329,15 @@ expobj.getItem=function(item) {
 
 expobj.safeGetItem=function(item) {
 
-    return new Promise( (resolve,reject) => {
+    //console.log('expobj Loaded Promise=',expobj.loadedPromise, ' item=',item);
+    
+    return new Promise( (resolve) => {
         expobj.loadedPromise.then( () => {
             resolve(expobj.getItem(item));
         }).catch( (e) => {
-            reject(e);
+            console.log('Failed to load',e,e.stack);
+            console.log('Resolving with standard ', userPreferences[item]);
+            resolve(userPreferences[item]);
         });
     });
 };
@@ -339,8 +359,10 @@ expobj.setItem=function(key,value,save=false) {
 
     
     if (save) {
-        if (genericio.getmode() === 'browser')  {
-            expobj.storeUserPreferences();
+        if (externals['environment'] === 'browser')  {
+            expobj.storeUserPreferences().then( () => {
+                console.log('--- User prefs saved');
+            }).catch( () => { });
         } else {
             expobj.saveUserPreferences();
         }
@@ -371,27 +393,33 @@ expobj.setItem=function(key,value,save=false) {
 // Load ${HOME}/.bisweb
 // ------------------------------------------------------------------------------
 
-let initializeCommandLine=function() {
+let initializeCommandLine=function(silent=false) {
 
-    if (expobj.loadedPromise!==null)
+    if (expobj.initialized)
         return;
-    
-    console.log(',,,,');
+
+    if (!silent)
+        console.log(',,,,');
     let fname=nodeLoadUserPreferences();
     if (fname!==null) {
-        console.log(",,,, bisweb commandline user preferences loaded from "+fname);
-        console.log(',,,, ',JSON.stringify(userPreferences));
-        console.log(',,,,');
+        if (!silent) {
+            console.log(",,,, BioImage Suite Web user preferences loaded from "+fname);
+            console.log(',,,, ',JSON.stringify(userPreferences));
+            console.log(',,,,');
+        }
     } else {
         console.log(',,,, Failed to read user preferences from default location');
         expobj.setImageOrientationOnLoad(userPreferences['orientationOnLoad'],null);
         fname=getDefaultFileName();
-        if (expobj.saveUserPreferences(fname))
-            console.log(',,,, \t created and saved user preferences in ',fname);
-        console.log(',,,,');
+        if (expobj.saveUserPreferences(fname)) {
+            if (!silent) {
+                console.log(',,,, \t created and saved user preferences in ',fname);
+                console.log(',,,,');
+            }
+        }
     }
     // Resolve the promise for later
-    expobj.loadedPromise=Promise.resolve();
+    expobj.resolve();
 };    
 
 
@@ -402,35 +430,28 @@ let initializeCommandLine=function() {
 
 expobj.initialize=function(dbase) {
 
-    if (expobj.loadedPromise!==null) {
+    if (expobj.initialized) {
         console.log('+++++ \t user preferences already initialized (or in process of being initialized)');
         return expobj.loadedPromise;
     }
     
-    if (genericio.getmode() === 'browser')  {
-        expobj.loadedPromise=webLoadUserPreferences(dbase);
-        expobj.loadedPromise.then(() => {
-            expobj.storeUserPreferences(dbase);
+    if (externals['environment'] === 'browser')  {
+
+        webLoadUserPreferences(dbase).then( () => {
+            expobj.storeUserPreferences(dbase).catch( (e) => {
+                console.log('Error =',e);
+            });
+            expobj.resolve();
+        }).catch( () => { 
+            expobj.reject('Bad Pref Database');
         });
     } else {
         initializeCommandLine();
+        expobj.resolve();
     }
+
     return expobj.loadedPromise;
 };
 
-// -------------------------- auto execute code -----------------------------
-// If one command line, initialize automatically
-if (genericio.getmode() !== 'browser')  {
-    initializeCommandLine();
-} else {
-    try {
-        // Web worker gives an error
-        Window.biswebpref=expobj;
-    } catch (e) {
-        console.log("++++ In web worker, no export");
-    }
-}
-
-
-
 module.exports=expobj;
+    

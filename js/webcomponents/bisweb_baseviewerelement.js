@@ -87,6 +87,7 @@ class BaseViewerElement extends HTMLElement {
             preservesnapshot : false,
             
             // colormaps
+            colormapControllerPayload : null,
             objectmaptransferfunction : util.mapobjectmapfactory(255),
             objectmaptransferinfo : { isfunctional : false, colormode : 'Overlay' },
 
@@ -369,7 +370,12 @@ class BaseViewerElement extends HTMLElement {
             let renderer=this.internal.layoutcontroller.renderer;
             let t=renderer.domElement.toDataURL();
             this.internal.preservesnapshot=false;
-            this.internal.snapshotcontroller.update(t,true);//this.internal.ismosaic);
+
+            let hasColorbar=true;
+            if (this.internal.simplemode)
+                hasColorbar=false;
+            
+            this.internal.snapshotcontroller.update(t,hasColorbar);//this.internal.ismosaic);
         }
 
         if (this.slave_viewer!==null)
@@ -547,6 +553,8 @@ class BaseViewerElement extends HTMLElement {
             }
         }
     }
+
+    
     
     // ------------------------------------------------------------------------
     // Respond to sub-controllers
@@ -558,6 +566,8 @@ class BaseViewerElement extends HTMLElement {
     updatetransferfunctions(input) {
 
         let num=this.internal.slices.length;
+
+        this.internal.colormapControllerPayload=input;
         
         if (input.image!==null) {
             this.internal.imagetransferfunction=input.image;
@@ -879,7 +889,7 @@ class BaseViewerElement extends HTMLElement {
         
         const self=this;
         let layoutwidgetid=this.getAttribute('bis-layoutwidgetid');
-        
+
         let simple=this.getAttribute('bis-simplemode');
         this.internal.simplemode=false;
         if (simple==="1" || simple==="true")
@@ -1125,6 +1135,13 @@ class BaseViewerElement extends HTMLElement {
             dim[4]=1;
         }
     }
+
+    /** handle color mode change */
+    handleColorModeChange(dark=true) {
+        this.getLayoutController().setDarkMode(dark);
+        this.handleresize();
+    }
+
 }
 
 

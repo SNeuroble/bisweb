@@ -143,6 +143,7 @@ class BisWebImage extends BisWebDataObject {
         return new Promise( (resolve,reject) => {
             bisgenericio.read(fobj,true).then( function(obj) {
                 self.initialize();
+
                 let ext=obj.filename.split('.').pop().toLowerCase();
                 if (ext==="tif" || ext==="tiff")  {
                     if (obj.data.constructor.name === "Uint8Array")

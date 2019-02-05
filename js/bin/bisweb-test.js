@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /*  LICENSE
     
     _This file is Copyright 2018 by the Image Processing and Analysis Group (BioImage Suite Team). Dept. of Radiology & Biomedical Imaging, Yale School of Medicine._
@@ -21,12 +23,14 @@
  * Runs modules in test mode
  */
 
-require('../../config/bisweb_pathconfig.js');
-const program = require('commander');
-const tmp = require('tmp');
-const rimraf=require('rimraf');
-const commandline = require('commandline');
-const userPreferences = require('bisweb_userpreferences.js');
+global.bioimagesuiteweblib=false;
+
+const bioimagesuiteweblib=require('./bioimagesuiteweblib');
+const program = bioimagesuiteweblib.commander;
+const tmp = bioimagesuiteweblib.tmp;
+const rimraf=bioimagesuiteweblib.rimraf;
+const commandline=bioimagesuiteweblib.commandline;
+
 
 let tmpDirectory = tmp.dirSync();
 console.log('.... created tmp directory',tmpDirectory.name);
@@ -55,10 +59,19 @@ program
     .option('--test_target [s]', '\'Gold-standard\' image to compare module output to')
     .option('--test_threshold [n]', 'Acceptable deviation from input, measured as maximum absolute difference between values',parseFloat)
     .option('--test_type [s]', 'Type of output one of image, matrix, matrixtransform,gridtransform')
-    .option('--test_comparison [s]', 'Comparison maxabs, cc, ssd');
+    .option('--test_comparison [s]', 'Comparison maxabs, cc, ssd')
+    .option('--test_base_directory [s]', 'Base Directory for files');
 
 
 let bisModule = args[2];
+
+let basedirectory='';
+for (let i=0;i<args.length;i++) {
+    if (args[i]==="--test_base_directory")
+        basedirectory=args[i+1];
+}
+if (basedirectory.length>0) 
+    console.log('++++ Base Directory=',basedirectory);
 
 let dirname = tmpDirectory.name;
 
@@ -69,7 +82,7 @@ for (let i=0;i<args.length;i++) {
 }
 
 let tempName="";
-if (test_type==="image")
+if (test_type==="image" || test_type==="tfjs")
     tempName= dirname+ '/out.nii.gz';
 else if (test_type==="matrix" || test_type==="matrixtransform")
     tempName= dirname+ '/out.jmatr';
@@ -87,14 +100,30 @@ if (test_type==="registration") {
 }
 
 
+if (test_type==="tfjs") {
+    test_type="image";
+    for (let i=0;i<args.length;i++) {
+        if (args[i]==='--modelname') {
+            // Add basedirectory to modelname as it is really a file path
+            args[i+1]=basedirectory+args[i+1];
+        }
+    }
+}
 
-// Disable auto reorient on load
-console.log('++++ Disabling auto-reorient of images on load.\n+++++');
-userPreferences.setImageOrientationOnLoad('None');
 
-commandline.loadParse(args, bisModule).then(() => {
+// Disable auto reorient on load -- not needed any more
+//console.log('++++ Disabling auto-reorient of images on load.\n+++++');
+//userPreferences.setImageOrientationOnLoad('None');
+
+console.log('.... Testing module '+toolname);
+console.log('................................................');
+
+commandline.loadParse(args, bisModule, basedirectory).then(() => {
+    console.log('.... -------------------------------------------------------');
     commandline.processTestResult(toolname,tempName,
-                                  program.test_target,test_type,program.test_threshold,
+                                  basedirectory+program.test_target,
+                                  test_type,
+                                  program.test_threshold,
                                   program.test_comparison,
                                   cleanupAndExit);
 }).catch((e) => {

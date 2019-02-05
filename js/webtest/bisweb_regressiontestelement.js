@@ -23,6 +23,7 @@ const $=require('jquery');
 const moduleindex=require('moduleindex');
 const biswrap = require('libbiswasm_wrapper');
 const BisWebDataObjectCollection = require('bisweb_dataobjectcollection.js');
+const webcss=require('bisweb_css');
 const webutil=require('bis_webutil');
 const systemprint=console.log;
 const bis_genericio=require('bis_genericio');
@@ -31,17 +32,19 @@ const bisdate=require('bisdate.js').date;
 const wrapperutil=require('bis_wrapperutils');
 const BisWebImage=require('bisweb_image');
 const bis_webfileutil=require('bis_webfileutil');
+const gettestdata=require('./bis_gettestdata');
 
 
 import module_testlist from '../../test/module_tests.json';
 let replacing=false;
 let logtext="";
 let testDataRootDirectory="";
+let testDataModelDirectory="";
 let threadController=null;
 let oldTestDataRootDirectory='';
+let serverDirectory=null;
 
 let disableServer=function() {
-
     bis_webfileutil.setMode('local',false);
     testDataRootDirectory=oldTestDataRootDirectory;
 };
@@ -63,10 +66,36 @@ let enableServer=async function() {
             return Promise.reject(e);
         }
     }
-    let tempdir=await serverClient.getServerTempDirectory();
-    testDataRootDirectory=tempdir+'/';
-    webutil.createAlert('Connected to '+serverClient.getServerInfo()+'. Using '+testDataRootDirectory+' as data directory on server');
+
+    if (serverDirectory===null) {
+        
+        return new Promise( (resolve,reject) => {
+            
+            let clb=function(f) {
+                
+                if (f.length>0) {
+                    serverDirectory=f;
+                    testDataRootDirectory=serverDirectory+'/';
+                    webutil.createAlert('Connected to '+serverClient.getServerInfo()+'. Using '+testDataRootDirectory+' as data directory on server');
+                    resolve();
+                } else {
+                    reject();
+                }
+            };
+            
+            bis_webfileutil.genericFileCallback({
+                filters : "DIRECTORY",
+                suffix : "DIRECTORY",
+                title : "Select Testdata directory",
+                save : false,
+            },clb);
+        });
+    }
+
     return true;
+
+
+    
 };
 
 var replacesystemprint=function(doreplace=true) {
@@ -149,7 +178,11 @@ var execute_test=function(test,usethread=false) {
         let inputs={};
         let paramfile='';
         let des=module.getDescription();
+        
+        let tobj=get_test_object(test);
+        let test_type = tobj['test_type'] || 'image';
 
+        
         for (let i=1;i<command.length;i=i+2) {
             let flag=command[i];
             if (flag.length>0) {
@@ -175,8 +208,13 @@ var execute_test=function(test,usethread=false) {
                         if (pname===s || pname===p.varname) {
                             params[p.varname]=value;
                             found=true;
+
+                            if (p.varname === "modelname" && test_type === "tfjs") {
+                                params[p.varname]=testDataModelDirectory+value;
+                                console.log('Setting ',p.varname,'to ',params[p.varname]);
+                            }
                         }
-                    j=j+1;
+                        j=j+1;
                     }
                 }
                 
@@ -189,9 +227,14 @@ var execute_test=function(test,usethread=false) {
                 }
             }
         }
+
+        if (test_type==="tfjs")
+            test_type="image";
         
-        let tobj=get_test_object(test);
-        let test_type = tobj['test_type'] || 'image';
+        let doworker = test.webworker;
+        if (doworker!==false)
+            doworker=true;
+
         if (test_type==='registration')
             params['doreslice']=true;
 
@@ -205,20 +248,25 @@ var execute_test=function(test,usethread=false) {
                 console.log('oooo Invoking Module with params=',JSON.stringify(params));
                 let newParams = module.parseValuesAndAddDefaults(params);
 
+
                 if (!usethread) {
+                    replacesystemprint(false);
                     module.directInvokeAlgorithm(newParams).then(() => {
+                        replacesystemprint(false);
                         console.log('oooo -------------------------------------------------------');
                         resolve( {
                             result : ' Test completed, now checking results.',
                             module : module,
                         });
                     }).catch((e) => {
+                        replacesystemprint(false);
                         reject('---- Failed to invoke algorithm '+e);
                     });
-                } else {
+                } else if (doworker) {
                     console.log('oooo ..........---Calling Web Worker ..............................-');
+                    replacesystemprint(true);
                     threadController.executeModule(module.name, module.inputs,newParams).then((outputs) => {
-
+                        replacesystemprint(false);
                         if (Object.keys(outputs).length<1)
                             reject('---- Failed to execute in thread manager ');
 
@@ -230,8 +278,12 @@ var execute_test=function(test,usethread=false) {
                             module : module,
                         });
                     }).catch((e) => {
+                        replacesystemprint(false);
                         reject('---- Failed to invoke algorithm via thread manager '+e);
                     });
+                } else {
+                    replacesystemprint(false);
+                    reject('---- Cannot invoke this test via thread manager '+JSON.stringify(test,null,2));
                 }
             }).catch((e) => {
                 reject('----- Bad input filenames in test '+e);
@@ -335,6 +387,10 @@ var run_memory_test=function() {
     let imgnames = [ 'thr.nii.gz',
                      'thr_sm.nii.gz',
                    ];
+
+    let forcegithub= $('#usegithub').is(":checked") || false;
+    testDataRootDirectory=gettestdata.getbase(forcegithub,false);
+    console.log('++++ Test Data Directory=',testDataRootDirectory);
     
     let fullnames = [ '','','','' ];
     for (let i=0;i<=1;i++)
@@ -420,6 +476,12 @@ var run_memory_test=function() {
 
 var run_tests=async function(testlist,firsttest=0,lasttest=-1,testname='All',usethread=false,usefileserver=false) { // jshint ignore:line
 
+    let forcegithub= $('#usegithub').is(":checked") || false;
+    testDataRootDirectory=gettestdata.getbase(forcegithub,false);
+    console.log('++++ Test Data Directory=',testDataRootDirectory);
+    testDataModelDirectory=testDataRootDirectory;
+    oldTestDataRootDirectory=testDataRootDirectory;
+    
     if (webutil.inElectronApp()) {
         window.BISELECTRON.remote.getCurrentWindow().openDevTools();
     }
@@ -434,7 +496,11 @@ var run_tests=async function(testlist,firsttest=0,lasttest=-1,testname='All',use
     if (usefileserver)
         fileserverflag=1;
             
-    //    console.clear();
+    if (thread && threadController===null) { 
+        threadController=document.createElement('bisweb-webworkercontroller');
+        $('body').append($(threadController));
+    }
+
     
     if (!usefileserver) {
         console.log('Disabling File Server');
@@ -496,7 +562,7 @@ var run_tests=async function(testlist,firsttest=0,lasttest=-1,testname='All',use
                 main.append(`<P> Running in WebWorker </P>`);
             console.log(`-------------------------------`);
             console.log(`-------------------------------\nRunning test ${i}: ${v.command}, ${v.test},${v.result}\n------------------------`);
-            replacesystemprint(true);
+
             try {
                 let t0 = performance.now();
                 let obj=await execute_test(v,usethread); // jshint ignore:line
@@ -507,7 +573,6 @@ var run_tests=async function(testlist,firsttest=0,lasttest=-1,testname='All',use
                     let a='<P>.... WASM memory size=' +biswrap.get_module()['wasmMemory'].buffer.byteLength/(1024*1024)+' MB.</P>';
                     main.append(a);
                 } catch(e) {
-                    console.log(e);
                     // sometimes we have pure js modules, no wasm
                 }
 
@@ -538,7 +603,7 @@ var run_tests=async function(testlist,firsttest=0,lasttest=-1,testname='All',use
                 bad+=1;
                 badlist.push(tname);
             }
-            replacesystemprint(false);
+
 
             main.append(`<details><summary><B>Details</B></summary><PRE>${logtext}</PRE></details><HR>`);
             window.scrollTo(0,document.body.scrollHeight-100);
@@ -576,15 +641,6 @@ var run_tests=async function(testlist,firsttest=0,lasttest=-1,testname='All',use
         }
 
         window.scrollTo(0,document.body.scrollHeight-100);
-
-        if (!usethread) {
-            try {
-                biswrap.get_module()._print_memory();
-                console.log('Memory size=',biswrap.get_module()['wasmMemory'].buffer.byteLength/(1024*1024),' MB');
-            } catch(e) {
-                // sometimes we have pure js modules, no wasm
-            }
-        }
     } else {
         main.append(`<BR> <BR> <BR>`);
         window.scrollTo(0,0);
@@ -745,18 +801,20 @@ var startFunction = (() => {
         $('#cnote').remove();
     }
 
-    setTimeout( () => {
-        threadController=document.createElement('bisweb-webworkercontroller');
-        $('body').append($(threadController));
-    },10);
+    webcss.setAutoColorMode();
+    /*
     
-
-    if (typeof window.BIS !=='undefined') 
+    if (typeof window.BIS !=='undefined')  {
         testDataRootDirectory="../test/";
-    else 
+        testDataModelDirectory="../test/";
+        if (webutil.inElectronApp()) {
+            testDataModelDirectory="./test/";
+        }
+    } else  {
         testDataRootDirectory="./test/";
+        testDataModelDirectory="./test/";
+    }*/
 
-    oldTestDataRootDirectory=testDataRootDirectory;
     initialize(module_testlist);
 
 });
@@ -770,6 +828,15 @@ class RegressionTestElement extends HTMLElement {
     
     // Fires when an instance of the element is created.
     connectedCallback() {
+
+        if (gettestdata.islocal()) {
+            console.log('Islocal');
+            $("#githubdiv").css({"visibility" : "visible"});
+        }  else {
+            $("#usegithublab").text('');
+        }
+        
+        
 	window.onload=startFunction;
     }
 }

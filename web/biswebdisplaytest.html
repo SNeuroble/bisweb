@@ -38,8 +38,7 @@
     <!-- begin webpack/gulp modifications -->
     <!-- external css files -->
     <!-- build:css -->
-    <link rel="stylesheet" type="text/css" href="../lib/css/bootstrap_dark.css">
-    <link rel="stylesheet" type="text/css" href="../lib/css/bootstrap-colorselector.css">
+    <link rel="stylesheet" type="text/css" href="../lib/css/bootstrap_bright.css">
     <link rel="stylesheet" type="text/css" href="biscommon.css">
     <!-- endbuild -->
 
@@ -48,6 +47,7 @@
     <script src="bis.js"></script>
     <script src="../build/web/webcomponents-lite.js"></script>
     <script src="../build/web/jquery.min.js"></script>
+    <script src="../build/web/three.min.js"></script>
     <script src="../build/web/bootstrap.min.js"></script>
     <script src="../build/web/libbiswasm_wasm.js"></script>
     <script src="../build/web/bislib.js"></script>
@@ -62,7 +62,7 @@
 
     <bisweb-topmenubar   id="viewer_menubar"></bisweb-topmenubar>
 
-    <div id="toph4">
+    <div id="toph4" style="width:800px; left:5px" class="biswebpanel2">
       <div id="midh4">
 
         <H4> BioImage Suite Web Display Regression Test Runner</H4>
@@ -71,16 +71,23 @@
           <input type="number" step="1"  id="first" placeholder="0">
           <label for="last">Last:</label>
           <input type="number" step="1"  id="last" placeholder="5">
+          
+          <div id="githubdiv" class="checkbox abc-checkbox info"
+               style="display: inline-block; visibility: hidden">
+            <input id="usegithub" class="styled" type="checkbox">
+            <label for="usegithub" id="usegithublab">Use Github Data</label>
+          </div>
+
           <button class="btn-small btn-success bisbtn" type="submit" id="computesingle">Run
           Single Test</button>
-          <button class="btn-small btn-warning bisbtn" id="compute">Run
+          <button class="btn-small btn-warning bisbtn bismultipletests" id="compute">Run
           Multiple Tests</button>
         </form>
       </div>
 
     </div> 
 
-    <div id="baseresults">
+    <div id="baseresults" style="left: 820px; width: calc(100% - 830px)" class="biswebpanel2">
       <div  id="resultimages">
         <table>
           <tr>
@@ -97,7 +104,7 @@
         <div id="comparison">0.0</div>
       </div>
       <HR>
-      <div id="displayresults">
+      <div id="displayresults" class="biswebpanel">
         <pre>Results will appear here ...</pre>
       </div>
     </div>
@@ -106,8 +113,8 @@
     
     <div role="tabpanel" id="bistabs">
       <ul class="nav nav-tabs" role="tablist" id="viewers">
-	<li role="presentation" class="active"><a href="#ortho" aria-controls="ortho" role="tab" data-toggle="tab">Orthogonal</a></li>
-	<li role="presentation"><a href="#mosaic" aria-controls="mosaic" role="tab" data-toggle="tab">Mosaic</a></li>
+	    <li role="presentation" class="active"><a href="#ortho" aria-controls="ortho" role="tab" data-toggle="tab">Orthogonal</a></li>
+	    <li role="presentation"><a href="#mosaic" aria-controls="mosaic" role="tab" data-toggle="tab">Mosaic</a></li>
       </ul>
       <div class="tab-content">
 	<div role="tabpanel" class="tab-pane active" id="ortho">
@@ -117,8 +124,9 @@
 	      bis-dockwidth="200"
 	      bis-topheight="200"
 	      bis-coreopen="true"
-              bis-noresize="1"
-              bis-fixed="1"
+          bis-noresize="1"
+          bis-fixed="1"
+          bis-brightcanvas="0"
 	      bis-defaulttext="">
 	    </bisweb-viewerlayoutelement>
 
@@ -173,6 +181,7 @@
     
     <bisweb-dualviewerapplication
       id="maindual"
+      bis-external="1"
       bis-extrastatesave="1"
       bis-tabset="#viewers"
       bis-mode="overlay",
